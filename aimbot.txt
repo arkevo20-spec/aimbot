@@ -1,0 +1,347 @@
+-- วางไว้ใน LocalScript ที่ StarterPlayerScripts
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local localPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- 1. สร้าง UI และวงกลม FOV
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AutoGameMenu"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+-- วงกลม FOV (แสดงกลางจอสำหรับกำหนดระยะล็อก)
+local fovCircle = Drawing.new("Circle")
+fovCircle.Visible = false
+fovCircle.Transparency = 0.8
+fovCircle.Color = Color3.fromRGB(0, 255, 200)
+fovCircle.Thickness = 1.5
+fovCircle.NumSides = 64
+fovCircle.Filled = false
+fovCircle.Radius = 150
+
+-- กรอบเมนูด้านขวาบน
+local frame = Instance.new("Frame")
+frame.Name = "MenuFrame"
+frame.Size = UDim2.new(0, 200, 0, 230)
+frame.Position = UDim2.new(1, -220, 0, 20)
+frame.BackgroundTransparency = 0.5
+frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+frame.Parent = screenGui
+
+-- ปุ่ม ESP
+local espButton = Instance.new("TextButton")
+espButton.Name = "ESPButton"
+espButton.Size = UDim2.new(1, -10, 0, 32)
+espButton.Position = UDim2.new(0, 5, 0, 5)
+espButton.Text = "ESP: ON"
+espButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+espButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+espButton.TextSize = 14
+espButton.Font = Enum.Font.GothamBold
+espButton.Parent = frame
+
+-- ปุ่มเปิด/ปิดระบบล็อก
+local systemButton = Instance.new("TextButton")
+systemButton.Name = "SystemButton"
+systemButton.Size = UDim2.new(1, -10, 0, 32)
+systemButton.Position = UDim2.new(0, 5, 0, 42)
+systemButton.Text = "Lock System: OFF"
+systemButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+systemButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+systemButton.TextSize = 14
+systemButton.Font = Enum.Font.GothamBold
+systemButton.Parent = frame
+
+-- ปุ่มเปลี่ยนคีย์ลัดสำหรับ "กดค้างเพื่อล็อก"
+local bindButton = Instance.new("TextButton")
+bindButton.Name = "BindButton"
+bindButton.Size = UDim2.new(1, -10, 0, 32)
+bindButton.Position = UDim2.new(0, 5, 0, 79)
+bindButton.Text = "Hold Key: [ E ]"
+bindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+bindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+bindButton.TextSize = 12
+bindButton.Font = Enum.Font.GothamBold
+bindButton.Parent = frame
+
+-- ป้ายข้อความและ Slider ปรับขนาดวงกลม FOV
+local fovLabel = Instance.new("TextLabel")
+fovLabel.Size = UDim2.new(1, -10, 0, 20)
+fovLabel.Position = UDim2.new(0, 5, 0, 116)
+fovLabel.BackgroundTransparency = 1
+fovLabel.Text = "FOV Radius: 150"
+fovLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+fovLabel.TextSize = 12
+fovLabel.Font = Enum.Font.GothamBold
+fovLabel.Parent = frame
+
+local fovSliderBg = Instance.new("Frame")
+fovSliderBg.Size = UDim2.new(1, -10, 0, 12)
+fovSliderBg.Position = UDim2.new(0, 5, 0, 138)
+fovSliderBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+fovSliderBg.BorderSizePixel = 0
+fovSliderBg.Parent = frame
+
+local fovSliderFill = Instance.new("Frame")
+fovSliderFill.Size = UDim2.new(0.35, 0, 1, 0)
+fovSliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+fovSliderFill.BorderSizePixel = 0
+fovSliderFill.Parent = fovSliderBg
+
+local fovButton = Instance.new("TextButton")
+fovButton.Size = UDim2.new(0, 16, 0, 20)
+fovButton.Position = UDim2.new(0.35, -8, 0, -4)
+fovButton.Text = ""
+fovButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+fovButton.Parent = fovSliderBg
+
+-- ปุ่มซ่อน/แสดง UI
+local hideBindButton = Instance.new("TextButton")
+hideBindButton.Name = "HideBindButton"
+hideBindButton.Size = UDim2.new(1, -10, 0, 32)
+hideBindButton.Position = UDim2.new(0, 5, 0, 176)
+hideBindButton.Text = "Hide UI Key: [ Insert ]"
+hideBindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+hideBindButton.BackgroundColor3 = Color3.fromRGB(80, 50, 120)
+hideBindButton.TextSize = 12
+hideBindButton.Font = Enum.Font.GothamBold
+hideBindButton.Parent = frame
+
+-- 2. ตัวแปรสถานะ
+local espEnabled = true
+local isSystemActive = false
+local isHoldingKey = false
+local lockedTarget = nil
+local isUiVisible = true
+
+local holdKey = Enum.KeyCode.E
+local hideKey = Enum.KeyCode.Insert
+
+local waitingForHoldKey = false
+local waitingForHideKey = false
+
+local minRadius = 50
+local maxRadius = 400
+local currentRadius = 150
+local isDraggingFov = false
+
+-- 3. ระบบ ESP รองรับผู้เล่นใหม่ที่เพิ่งจอยเข้ามาอัตโนมัติ
+local function setupPlayerGlow(character, player)
+	if player == localPlayer then return end
+	if not character then return end
+	
+	if not character:FindFirstChild("PlayerAuraHighlight") then
+		local highlight = Instance.new("Highlight")
+		highlight.Name = "PlayerAuraHighlight"
+		highlight.Adornee = character
+		highlight.FillTransparency = 0.5
+		highlight.OutlineTransparency = 0
+		highlight.FillColor = Color3.fromRGB(0, 255, 200)
+		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.Enabled = espEnabled
+		highlight.Parent = character
+	end
+end
+
+local function monitorPlayer(player)
+	player.CharacterAdded:Connect(function(character)
+		character:WaitForChild("HumanoidRootPart", 5)
+		setupPlayerGlow(character, player)
+	end)
+	if player.Character then
+		setupPlayerGlow(player.Character, player)
+	end
+end
+
+Players.PlayerAdded:Connect(monitorPlayer)
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(function() monitorPlayer(player) end)
+end
+
+espButton.MouseButton1Click:Connect(function()
+	espEnabled = not espEnabled
+	espButton.Text = espEnabled and "ESP: ON" or "ESP: OFF"
+	espButton.BackgroundColor3 = espEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.Character then
+			local hl = player.Character:FindFirstChild("PlayerAuraHighlight")
+			if hl then hl.Enabled = espEnabled end
+		end
+	end
+end)
+
+systemButton.MouseButton1Click:Connect(function()
+	isSystemActive = not isSystemActive
+	if isSystemActive then
+		systemButton.Text = "Lock System: ON"
+		systemButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+		fovCircle.Visible = isUiVisible
+	else
+		systemButton.Text = "Lock System: OFF"
+		systemButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+		isHoldingKey = false
+		lockedTarget = nil
+		fovCircle.Visible = false
+	end
+end)
+
+-- ค้นหาเป้าหมายภายในวงกลม FOV
+local function getTargetClosestToScreenCenter()
+	local closestTarget = nil
+	local shortestDistance = math.huge
+	local viewportCenter = camera.ViewportSize / 2
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= localPlayer and player.Character then
+			local root = player.Character:FindFirstChild("HumanoidRootPart")
+			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+			
+			if root and humanoid and humanoid.Health > 0 then
+				local screenPoint, onScreen = camera:WorldToViewportPoint(root.Position)
+				if onScreen then
+					local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
+					local distanceToCenter = (screenPos - viewportCenter).Magnitude
+					
+					if distanceToCenter <= currentRadius and distanceToCenter < shortestDistance then
+						shortestDistance = distanceToCenter
+						closestTarget = player.Character
+					end
+				end
+			end
+		end
+	end
+	return closestTarget
+end
+
+bindButton.MouseButton1Click:Connect(function()
+	waitingForHoldKey = true
+	waitingForHideKey = false
+	bindButton.Text = "กดปุ่มสำหรับกดค้าง..."
+	bindButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+end)
+
+hideBindButton.MouseButton1Click:Connect(function()
+	waitingForHideKey = true
+	waitingForHoldKey = false
+	hideBindButton.Text = "กดปุ่มซ่อน UI..."
+	hideBindButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+end)
+
+local function toggleUiVisibility()
+	isUiVisible = not isUiVisible
+	for _, child in ipairs(frame:GetChildren()) do
+		if child:IsA("GuiObject") and child ~= hideBindButton then
+			child.Visible = isUiVisible
+		end
+	end
+	fovCircle.Visible = isUiVisible and isSystemActive
+	
+	if isUiVisible then
+		frame.Size = UDim2.new(0, 200, 0, 230)
+		hideBindButton.Text = "Hide UI Key: [ " .. hideKey.Name .. " ]"
+		hideBindButton.BackgroundColor3 = Color3.fromRGB(80, 50, 120)
+	else
+		frame.Size = UDim2.new(0, 200, 0, 40)
+		hideBindButton.Text = "Show UI [ " .. hideKey.Name .. " ]"
+		hideBindButton.BackgroundColor3 = Color3.fromRGB(50, 120, 50)
+	end
+end
+
+-- ระบบเลื่อน Slider ปรับขนาดวงกลม FOV
+local function updateRadiusFromInput(input)
+	local sliderAbsolutePos = fovSliderBg.AbsolutePosition.X
+	local sliderAbsoluteSize = fovSliderBg.AbsoluteSize.X
+	local mouseX = input.Position.X
+	
+	local relativeX = math.clamp((mouseX - sliderAbsolutePos) / sliderAbsoluteSize, 0, 1)
+	currentRadius = math.floor(minRadius + (maxRadius - minRadius) * relativeX)
+	
+	fovSliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+	fovButton.Position = UDim2.new(relativeX, -8, 0, -4)
+	fovLabel.Text = "FOV Radius: " .. currentRadius
+	fovCircle.Radius = currentRadius
+end
+
+fovButton.MouseButton1Down:Connect(function()
+	isDraggingFov = true
+end)
+
+fovSliderBg.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDraggingFov = true
+		updateRadiusFromInput(input)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDraggingFov = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if isDraggingFov and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		updateRadiusFromInput(input)
+	end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		if waitingForHoldKey then
+			holdKey = input.KeyCode
+			waitingForHoldKey = false
+			bindButton.Text = "Hold Key: [ " .. holdKey.Name .. " ]"
+			bindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+			return
+		elseif waitingForHideKey then
+			hideKey = input.KeyCode
+			waitingForHideKey = false
+			hideBindButton.Text = isUiVisible and ("Hide UI Key: [ " .. hideKey.Name .. " ]") or ("Show UI [ " .. hideKey.Name .. " ]")
+			hideBindButton.BackgroundColor3 = isUiVisible and Color3.fromRGB(80, 50, 120) or Color3.fromRGB(50, 120, 50)
+			return
+		end
+		
+		if input.KeyCode == hideKey then
+			toggleUiVisibility()
+			return
+		end
+	end
+
+	if gameProcessed then return end
+	
+	if isSystemActive and input.KeyCode == holdKey then
+		isHoldingKey = true
+		lockedTarget = getTargetClosestToScreenCenter()
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == holdKey then
+		isHoldingKey = false
+		lockedTarget = nil
+	end
+end)
+
+-- 4. ระบบล็อกเป้าหมายด้วยการหมุนมุมกล้อง พร้อมเช็คความพร้อมของผู้เล่นใหม่ตลอดเวลา
+RunService.RenderStepped:Connect(function()
+	fovCircle.Position = camera.ViewportSize / 2
+
+	if isSystemActive and isHoldingKey and lockedTarget then
+		local targetHumanoid = lockedTarget:FindFirstChildOfClass("Humanoid")
+		local targetRoot = lockedTarget:FindFirstChild("HumanoidRootPart")
+		
+		if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+			local targetPos = targetRoot.Position + Vector3.new(0, 0.5, 0)
+			local currentCameraPos = camera.CFrame.Position
+			camera.CFrame = CFrame.new(currentCameraPos, targetPos)
+		else
+			lockedTarget = nil
+			isHoldingKey = false
+		end
+	end
+end)
