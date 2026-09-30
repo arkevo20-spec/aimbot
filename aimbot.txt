@@ -37,18 +37,18 @@ end
 -- =========================================================
 
 local COLORS = {
-    background = Color3.fromRGB(18, 20, 25),
-    panel = Color3.fromRGB(24, 27, 34),
-    panel2 = Color3.fromRGB(31, 35, 44),
-    stroke = Color3.fromRGB(58, 64, 76),
-    text = Color3.fromRGB(240, 243, 248),
-    subtext = Color3.fromRGB(158, 165, 178),
-    accent = Color3.fromRGB(72, 180, 255),
-    green = Color3.fromRGB(62, 196, 116),
-    red = Color3.fromRGB(224, 78, 90),
-    orange = Color3.fromRGB(229, 155, 67),
-    purple = Color3.fromRGB(156, 108, 226),
-    blue = Color3.fromRGB(65, 150, 255),
+    background = Color3.fromRGB(8, 15, 26),
+    panel = Color3.fromRGB(11, 23, 39),
+    panel2 = Color3.fromRGB(17, 35, 57),
+    stroke = Color3.fromRGB(39, 79, 125),
+    text = Color3.fromRGB(241, 246, 255),
+    subtext = Color3.fromRGB(150, 176, 211),
+    accent = Color3.fromRGB(49, 188, 255),
+    green = Color3.fromRGB(34, 220, 128),
+    red = Color3.fromRGB(255, 75, 107),
+    orange = Color3.fromRGB(255, 173, 67),
+    purple = Color3.fromRGB(140, 82, 255),
+    blue = Color3.fromRGB(74, 146, 255),
     white = Color3.fromRGB(255, 255, 255),
 }
 
@@ -241,109 +241,400 @@ espOverlay.ZIndex = 2
 espOverlay.Parent = screenGui
 
 -- =========================================================
--- 5. Clean centered UI
+-- =========================================================
+-- 5. Futuristic UI / redesigned to match the reference
 -- =========================================================
 
 local panel = Instance.new("Frame")
 panel.Name = "MenuFrame"
-panel.Size = UDim2.fromOffset(330, 540)
+panel.Size = UDim2.fromOffset(400, 660)
 panel.AnchorPoint = Vector2.new(0.5, 0.5)
 panel.Position = UDim2.fromScale(0.5, 0.5)
 panel.BackgroundColor3 = COLORS.background
-panel.BackgroundTransparency = 0.02
+panel.BackgroundTransparency = 0
 panel.BorderSizePixel = 0
+panel.ClipsDescendants = true
+panel.ZIndex = 10
 panel.Parent = screenGui
-addCorner(panel, 14)
-addStroke(panel, COLORS.stroke, 1.2)
+addCorner(panel, 20)
+addStroke(panel, COLORS.stroke, 1.2, 0.05)
+
+local panelGlow = Instance.new("UIStroke")
+panelGlow.Color = COLORS.accent
+panelGlow.Thickness = 2
+panelGlow.Transparency = 0.84
+panelGlow.Parent = panel
+
+local panelGradient = Instance.new("UIGradient")
+panelGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 19, 34)),
+    ColorSequenceKeypoint.new(0.52, Color3.fromRGB(8, 14, 26)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 11, 21)),
+})
+panelGradient.Rotation = 90
+panelGradient.Parent = panel
 
 local header = Instance.new("Frame")
-header.Size = UDim2.new(1, 0, 0, 56)
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 76)
+header.Position = UDim2.fromOffset(0, 0)
 header.BackgroundColor3 = COLORS.panel
+header.BackgroundTransparency = 0.02
 header.BorderSizePixel = 0
+header.ZIndex = 11
 header.Parent = panel
-addCorner(header, 14)
+addCorner(header, 20)
 
 local headerMask = Instance.new("Frame")
-headerMask.Size = UDim2.new(1, 0, 0, 14)
-headerMask.Position = UDim2.new(0, 0, 1, -14)
+headerMask.Size = UDim2.new(1, 0, 0, 18)
+headerMask.Position = UDim2.new(0, 0, 1, -18)
 headerMask.BackgroundColor3 = COLORS.panel
 headerMask.BorderSizePixel = 0
+headerMask.ZIndex = 11
 headerMask.Parent = header
 
+local headerGradient = Instance.new("UIGradient")
+headerGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 35, 60)),
+    ColorSequenceKeypoint.new(0.55, Color3.fromRGB(11, 23, 39)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 16, 29)),
+})
+headerGradient.Rotation = 0
+headerGradient.Parent = header
+
 local accentBar = Instance.new("Frame")
-accentBar.Size = UDim2.fromOffset(4, 34)
-accentBar.Position = UDim2.fromOffset(14, 11)
+accentBar.Size = UDim2.fromOffset(4, 54)
+accentBar.Position = UDim2.fromOffset(16, 17)
 accentBar.BackgroundColor3 = COLORS.accent
 accentBar.BorderSizePixel = 0
+accentBar.ZIndex = 12
 accentBar.Parent = header
 addCorner(accentBar, 4)
 
-local title = createLabel(header, "AUTO CONTROL", UDim2.new(1, -86, 0, 22), UDim2.fromOffset(28, 7), 16, COLORS.text)
+local titleIcon = Instance.new("TextLabel")
+titleIcon.Size = UDim2.fromOffset(42, 42)
+titleIcon.Position = UDim2.fromOffset(30, 22)
+titleIcon.BackgroundColor3 = COLORS.panel2
+titleIcon.BackgroundTransparency = 0.15
+titleIcon.BorderSizePixel = 0
+titleIcon.Text = "⚙"
+titleIcon.TextColor3 = COLORS.accent
+titleIcon.TextSize = 23
+titleIcon.Font = Enum.Font.GothamBold
+titleIcon.TextXAlignment = Enum.TextXAlignment.Center
+titleIcon.TextYAlignment = Enum.TextYAlignment.Center
+titleIcon.ZIndex = 12
+titleIcon.Parent = header
+addCorner(titleIcon, 12)
+addStroke(titleIcon, COLORS.accent, 1.3, 0.15)
+
+local title = createLabel(
+    header,
+    "AUTO CONTROL",
+    UDim2.new(1, -210, 0, 28),
+    UDim2.fromOffset(84, 17),
+    22,
+    COLORS.text
+)
 title.Font = Enum.Font.GothamBold
+title.ZIndex = 12
 
-local subtitle = createLabel(header, "ESP  •  LOCK  •  FOV", UDim2.new(1, -90, 0, 16), UDim2.fromOffset(28, 29), 9, COLORS.subtext)
+local titleGradient = Instance.new("UIGradient")
+titleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(245, 248, 255)),
+    ColorSequenceKeypoint.new(0.65, Color3.fromRGB(245, 248, 255)),
+    ColorSequenceKeypoint.new(1, COLORS.accent),
+})
+titleGradient.Parent = title
 
-local minimizeButton = createButton(header, "Minimize", UDim2.fromOffset(34, 32), UDim2.new(1, -46, 0, 12), "—", COLORS.panel2, 16)
-addStroke(minimizeButton, COLORS.stroke, 1)
+local subtitle = createLabel(
+    header,
+    "ESP  •  LOCK  •  FOV",
+    UDim2.new(1, -210, 0, 18),
+    UDim2.fromOffset(85, 47),
+    10,
+    COLORS.subtext
+)
+subtitle.Font = Enum.Font.GothamSemibold
+subtitle.ZIndex = 12
+
+local statusPill = Instance.new("Frame")
+statusPill.Name = "StatusPill"
+statusPill.Size = UDim2.fromOffset(112, 30)
+statusPill.Position = UDim2.new(1, -162, 0, 22)
+statusPill.BackgroundColor3 = COLORS.panel2
+statusPill.BackgroundTransparency = 0.1
+statusPill.BorderSizePixel = 0
+statusPill.ZIndex = 12
+statusPill.Parent = header
+addCorner(statusPill, 15)
+addStroke(statusPill, COLORS.stroke, 1.1, 0.15)
+
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.fromOffset(8, 8)
+statusDot.Position = UDim2.fromOffset(13, 11)
+statusDot.BackgroundColor3 = COLORS.green
+statusDot.BorderSizePixel = 0
+statusDot.ZIndex = 13
+statusDot.Parent = statusPill
+addCorner(statusDot, 9)
+
+local status = createLabel(
+    statusPill,
+    "BOX OFF",
+    UDim2.new(1, -30, 1, 0),
+    UDim2.fromOffset(28, 0),
+    9,
+    COLORS.text
+)
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.Font = Enum.Font.GothamBold
+status.ZIndex = 13
+
+local minimizeButton = createButton(
+    header,
+    "Minimize",
+    UDim2.fromOffset(32, 32),
+    UDim2.new(1, -48, 0, 21),
+    "—",
+    COLORS.panel2,
+    16
+)
+minimizeButton.ZIndex = 13
+addStroke(minimizeButton, COLORS.stroke, 1, 0.1)
 
 local content = Instance.new("Frame")
 content.Name = "Content"
-content.Size = UDim2.new(1, -24, 1, -68)
-content.Position = UDim2.fromOffset(12, 62)
+content.Size = UDim2.new(1, -28, 1, -90)
+content.Position = UDim2.fromOffset(14, 88)
 content.BackgroundTransparency = 1
+content.ZIndex = 11
 content.Parent = panel
 
-local function createSection(parent, y, height, titleText, subtitleText)
+local function createSection(parent, y, height, titleText, subtitleText, accentColor, iconText)
     local section = Instance.new("Frame")
     section.Size = UDim2.new(1, 0, 0, height)
     section.Position = UDim2.fromOffset(0, y)
     section.BackgroundColor3 = COLORS.panel
-    section.BackgroundTransparency = 0.12
+    section.BackgroundTransparency = 0.015
     section.BorderSizePixel = 0
+    section.ZIndex = 11
     section.Parent = parent
-    addCorner(section, 10)
-    addStroke(section, COLORS.stroke, 0.8, 0.35)
+    addCorner(section, 15)
+    addStroke(section, COLORS.stroke, 1, 0.18)
 
-    local titleLabel = createLabel(section, titleText, UDim2.new(1, -20, 0, 18), UDim2.fromOffset(10, 7), 11, COLORS.text)
+    local glowLine = Instance.new("Frame")
+    glowLine.Size = UDim2.fromOffset(4, math.min(66, height - 24))
+    glowLine.Position = UDim2.fromOffset(0, 12)
+    glowLine.BackgroundColor3 = accentColor or COLORS.accent
+    glowLine.BorderSizePixel = 0
+    glowLine.ZIndex = 12
+    glowLine.Parent = section
+    addCorner(glowLine, 4)
+
+    local iconBadge = Instance.new("TextLabel")
+    iconBadge.Size = UDim2.fromOffset(44, 44)
+    iconBadge.Position = UDim2.fromOffset(14, 14)
+    iconBadge.BackgroundColor3 = Color3.fromRGB(12, 30, 51)
+    iconBadge.BorderSizePixel = 0
+    iconBadge.Text = iconText or "•"
+    iconBadge.TextColor3 = accentColor or COLORS.accent
+    iconBadge.TextSize = 20
+    iconBadge.Font = Enum.Font.GothamBold
+    iconBadge.TextXAlignment = Enum.TextXAlignment.Center
+    iconBadge.TextYAlignment = Enum.TextYAlignment.Center
+    iconBadge.ZIndex = 12
+    iconBadge.Parent = section
+    addCorner(iconBadge, 12)
+    addStroke(iconBadge, accentColor or COLORS.accent, 1.25, 0.12)
+
+    local titleLabel = createLabel(
+        section,
+        titleText,
+        UDim2.new(1, -78, 0, 23),
+        UDim2.fromOffset(72, 13),
+        15,
+        COLORS.text
+    )
     titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.ZIndex = 12
 
-    local subLabel = createLabel(section, subtitleText, UDim2.new(1, -20, 0, 16), UDim2.fromOffset(10, 24), 8, COLORS.subtext)
+    local subLabel = createLabel(
+        section,
+        subtitleText,
+        UDim2.new(1, -86, 0, 30),
+        UDim2.fromOffset(72, 37),
+        9,
+        COLORS.subtext
+    )
     subLabel.TextWrapped = true
+    subLabel.ZIndex = 12
 
     return section
 end
 
-local lockSection = createSection(content, 0, 104, "LOCK", "เปิดระบบ แล้วกดปุ่มที่ตั้งไว้ • ล็อกเฉพาะเป้าที่อยู่ในวง FOV")
-local espSection = createSection(content, 112, 158, "ESP", "เปิด ESP หลักก่อน แล้วเลือกสิ่งที่อยากเห็นแยกกัน")
-local fovSection = createSection(content, 278, 132, "FOV", "เลื่อนขนาดวง และความนุ่มของการดูดเป้า")
-local extraSection = createSection(content, 420, 42, "SHORTCUTS", "กดปุ่มเพื่อเปลี่ยนคีย์ได้ทุกเวลา")
+local lockSection = createSection(
+    content, 0, 132,
+    "LOCK",
+    "เลือกเป้า 1 คนที่ใกล้กลางจอที่สุด • เริ่มล็อกจากใน FOV",
+    COLORS.red, "◎"
+)
 
-local lockButton = createButton(lockSection, "LockButton", UDim2.new(0.55, -14, 0, 34), UDim2.fromOffset(10, 47), "LOCK  OFF", COLORS.red, 12)
-local teamButton = createButton(lockSection, "TeamButton", UDim2.new(0.45, -6, 0, 34), UDim2.new(0.55, 0, 0, 47), "TEAM CHECK • ON", COLORS.green, 9)
+local espSection = createSection(
+    content, 140, 178,
+    "ESP",
+    "เปิด/ปิดสิ่งที่ต้องการเห็นได้แยกกัน",
+    COLORS.green, "◉"
+)
 
-local targetButton = createButton(lockSection, "TargetButton", UDim2.new(0.5, -7, 0, 18), UDim2.fromOffset(10, 84), "TARGET • HEAD", COLORS.panel2, 8)
-local holdKeyButton = createButton(lockSection, "HoldKeyButton", UDim2.new(0.5, -7, 0, 18), UDim2.new(0.5, -3, 0, 84), "LOCK KEY  [E]", COLORS.panel2, 8)
+local fovSection = createSection(
+    content, 326, 170,
+    "FOV & SMOOTH",
+    "กำหนดขนาดวงและความนุ่มของการตามเป้า",
+    COLORS.purple, "◌"
+)
 
-local espButton = createButton(espSection, "ESPButton", UDim2.new(1, -20, 0, 30), UDim2.fromOffset(10, 46), "ESP  ON", COLORS.green, 11)
+local extraSection = createSection(
+    content, 504, 50,
+    "SHORTCUT",
+    "คีย์สำหรับซ่อน/แสดง UI",
+    COLORS.accent, "⌨"
+)
 
-local auraButton = createButton(espSection, "AuraButton", UDim2.new(0.5, -7, 0, 28), UDim2.fromOffset(10, 82), "AURA  ON", COLORS.green, 9)
-local boxButton = createButton(espSection, "BoxButton", UDim2.new(0.5, -7, 0, 28), UDim2.new(0.5, -3, 0, 82), "BOX  OFF", COLORS.panel2, 9)
-local skeletonButton = createButton(espSection, "SkeletonButton", UDim2.new(0.5, -7, 0, 28), UDim2.fromOffset(10, 116), "SKELETON  OFF", COLORS.panel2, 9)
-local nameButton = createButton(espSection, "NameButton", UDim2.new(0.5, -7, 0, 28), UDim2.new(0.5, -3, 0, 116), "NAME  ON", COLORS.green, 9)
+local lockButton = createButton(
+    lockSection, "LockButton",
+    UDim2.new(0.56, -15, 0, 36),
+    UDim2.fromOffset(10, 72),
+    "LOCK  OFF", COLORS.red, 11
+)
+lockButton.ZIndex = 13
+addStroke(lockButton, COLORS.red, 1.1, 0.1)
 
-local fovText = createLabel(fovSection, "FOV RADIUS", UDim2.new(0.5, -10, 0, 18), UDim2.fromOffset(10, 48), 9, COLORS.subtext)
-fovText.Font = Enum.Font.GothamBold
+local lockGradient = Instance.new("UIGradient")
+lockGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 83, 116)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(214, 39, 73)),
+})
+lockGradient.Rotation = 0
+lockGradient.Parent = lockButton
 
-local fovValue = createLabel(fovSection, "150", UDim2.new(0.5, -10, 0, 18), UDim2.new(0.5, 0, 0, 48), 11, COLORS.text)
-fovValue.TextXAlignment = Enum.TextXAlignment.Right
-fovValue.Font = Enum.Font.GothamBold
+local teamButton = createButton(
+    lockSection, "TeamButton",
+    UDim2.new(0.44, -5, 0, 36),
+    UDim2.new(0.56, 0, 0, 72),
+    "TEAM CHECK • ON", COLORS.green, 10
+)
+teamButton.ZIndex = 13
+addStroke(teamButton, COLORS.green, 1.1, 0.1)
+
+local teamGradient = Instance.new("UIGradient")
+teamGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 236, 141)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 173, 98)),
+})
+teamGradient.Parent = teamButton
+
+local targetButton = createButton(
+    lockSection, "TargetButton",
+    UDim2.new(0.5, -7, 0, 26),
+    UDim2.fromOffset(10, 112),
+    "TARGET  •  HEAD", COLORS.panel2, 9
+)
+targetButton.ZIndex = 13
+addStroke(targetButton, COLORS.stroke, 1, 0.12)
+
+local holdKeyButton = createButton(
+    lockSection, "HoldKeyButton",
+    UDim2.new(0.5, -7, 0, 26),
+    UDim2.new(0.5, -3, 0, 112),
+    "LOCK KEY  [E]", COLORS.panel2, 9
+)
+holdKeyButton.ZIndex = 13
+addStroke(holdKeyButton, COLORS.stroke, 1, 0.12)
+
+local espButton = createButton(
+    espSection, "ESPButton",
+    UDim2.new(1, -20, 0, 34),
+    UDim2.fromOffset(10, 72),
+    "ESP  ON", COLORS.green, 11
+)
+espButton.ZIndex = 13
+addStroke(espButton, COLORS.green, 1.1, 0.1)
+
+local auraButton = createButton(
+    espSection, "AuraButton",
+    UDim2.new(0.5, -7, 0, 30),
+    UDim2.fromOffset(10, 112),
+    "AURA  ON", COLORS.green, 9
+)
+auraButton.ZIndex = 13
+addStroke(auraButton, COLORS.green, 1, 0.18)
+
+local boxButton = createButton(
+    espSection, "BoxButton",
+    UDim2.new(0.5, -7, 0, 30),
+    UDim2.new(0.5, -3, 0, 112),
+    "BOX  OFF", COLORS.panel2, 9
+)
+boxButton.ZIndex = 13
+addStroke(boxButton, COLORS.stroke, 1, 0.18)
+
+local skeletonButton = createButton(
+    espSection, "SkeletonButton",
+    UDim2.new(0.5, -7, 0, 30),
+    UDim2.fromOffset(10, 148),
+    "SKELETON  OFF", COLORS.panel2, 9
+)
+skeletonButton.ZIndex = 13
+addStroke(skeletonButton, COLORS.stroke, 1, 0.18)
+
+local nameButton = createButton(
+    espSection, "NameButton",
+    UDim2.new(0.5, -7, 0, 30),
+    UDim2.new(0.5, -3, 0, 148),
+    "NAME  ON", COLORS.green, 9
+)
+nameButton.ZIndex = 13
+addStroke(nameButton, COLORS.green, 1, 0.18)
+
+local function createValueRow(parent, y, labelText, valueText)
+    local label = createLabel(
+        parent,
+        labelText,
+        UDim2.new(0.58, -10, 0, 20),
+        UDim2.fromOffset(14, y),
+        10,
+        COLORS.subtext
+    )
+    label.Font = Enum.Font.GothamBold
+    label.ZIndex = 12
+
+    local value = createLabel(
+        parent,
+        valueText,
+        UDim2.new(0.42, -14, 0, 22),
+        UDim2.new(0.58, 0, 0, y - 1),
+        11,
+        COLORS.text
+    )
+    value.TextXAlignment = Enum.TextXAlignment.Right
+    value.Font = Enum.Font.GothamBold
+    value.ZIndex = 12
+
+    return label, value
+end
+
+local fovText, fovValue = createValueRow(
+    fovSection, 68, "FOV RADIUS", "150"
+)
 
 local fovSlider = Instance.new("Frame")
 fovSlider.Name = "FOVSlider"
-fovSlider.Size = UDim2.new(1, -20, 0, 10)
-fovSlider.Position = UDim2.fromOffset(10, 76)
+fovSlider.Size = UDim2.new(1, -28, 0, 8)
+fovSlider.Position = UDim2.fromOffset(14, 96)
 fovSlider.BackgroundColor3 = COLORS.panel2
 fovSlider.BorderSizePixel = 0
+fovSlider.ZIndex = 12
 fovSlider.Parent = fovSection
 addCorner(fovSlider, 999)
 
@@ -351,32 +642,40 @@ local fovFill = Instance.new("Frame")
 fovFill.Size = UDim2.new(0, 0, 1, 0)
 fovFill.BackgroundColor3 = COLORS.accent
 fovFill.BorderSizePixel = 0
+fovFill.ZIndex = 13
 fovFill.Parent = fovSlider
 addCorner(fovFill, 999)
 
+local fovFillGradient = Instance.new("UIGradient")
+fovFillGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(36, 115, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(57, 215, 255)),
+})
+fovFillGradient.Parent = fovFill
+
 local fovKnob = Instance.new("TextButton")
-fovKnob.Size = UDim2.fromOffset(18, 18)
-fovKnob.Position = UDim2.new(0, -9, 0, -4)
+fovKnob.Size = UDim2.fromOffset(20, 20)
+fovKnob.Position = UDim2.new(0, -10, 0, -6)
 fovKnob.Text = ""
 fovKnob.BackgroundColor3 = COLORS.white
 fovKnob.BorderSizePixel = 0
 fovKnob.AutoButtonColor = false
+fovKnob.ZIndex = 14
 fovKnob.Parent = fovSlider
 addCorner(fovKnob, 999)
+addStroke(fovKnob, COLORS.accent, 1.6, 0.05)
 
-local smoothText = createLabel(fovSection, "SMOOTH", UDim2.new(0.5, -10, 0, 18), UDim2.fromOffset(10, 88), 9, COLORS.subtext)
-smoothText.Font = Enum.Font.GothamBold
-
-local smoothValue = createLabel(fovSection, "0 • 100%", UDim2.new(0.5, -10, 0, 18), UDim2.new(0.5, 0, 0, 88), 10, COLORS.text)
-smoothValue.TextXAlignment = Enum.TextXAlignment.Right
-smoothValue.Font = Enum.Font.GothamBold
+local smoothText, smoothValue = createValueRow(
+    fovSection, 116, "SMOOTH", "0 • 100%"
+)
 
 local smoothSlider = Instance.new("Frame")
 smoothSlider.Name = "SmoothSlider"
-smoothSlider.Size = UDim2.new(1, -20, 0, 10)
-smoothSlider.Position = UDim2.fromOffset(10, 112)
+smoothSlider.Size = UDim2.new(1, -28, 0, 8)
+smoothSlider.Position = UDim2.fromOffset(14, 144)
 smoothSlider.BackgroundColor3 = COLORS.panel2
 smoothSlider.BorderSizePixel = 0
+smoothSlider.ZIndex = 12
 smoothSlider.Parent = fovSection
 addCorner(smoothSlider, 999)
 
@@ -384,24 +683,79 @@ local smoothFill = Instance.new("Frame")
 smoothFill.Size = UDim2.new(0, 0, 1, 0)
 smoothFill.BackgroundColor3 = COLORS.purple
 smoothFill.BorderSizePixel = 0
+smoothFill.ZIndex = 13
 smoothFill.Parent = smoothSlider
 addCorner(smoothFill, 999)
 
+local smoothFillGradient = Instance.new("UIGradient")
+smoothFillGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(87, 69, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(191, 91, 255)),
+})
+smoothFillGradient.Parent = smoothFill
+
 local smoothKnob = Instance.new("TextButton")
-smoothKnob.Size = UDim2.fromOffset(18, 18)
-smoothKnob.Position = UDim2.new(0, -9, 0, -4)
+smoothKnob.Size = UDim2.fromOffset(20, 20)
+smoothKnob.Position = UDim2.new(0, -10, 0, -6)
 smoothKnob.Text = ""
 smoothKnob.BackgroundColor3 = COLORS.white
 smoothKnob.BorderSizePixel = 0
 smoothKnob.AutoButtonColor = false
+smoothKnob.ZIndex = 14
 smoothKnob.Parent = smoothSlider
 addCorner(smoothKnob, 999)
+addStroke(smoothKnob, COLORS.purple, 1.6, 0.05)
 
-local hideKeyButton = createButton(extraSection, "HideKeyButton", UDim2.new(1, -20, 0, 18), UDim2.fromOffset(10, 20), "UI KEY  [INSERT]", COLORS.panel2, 8)
+local smoothHint = createLabel(
+    fovSection,
+    "0 = SNAP   •   10 = SMOOTHEST",
+    UDim2.new(1, -28, 0, 14),
+    UDim2.fromOffset(14, 160),
+    8,
+    COLORS.subtext
+)
+smoothHint.TextXAlignment = Enum.TextXAlignment.Center
+smoothHint.ZIndex = 12
 
-local status = createLabel(header, "READY", UDim2.fromOffset(74, 16), UDim2.fromOffset(204, 10), 8, COLORS.subtext)
-status.TextXAlignment = Enum.TextXAlignment.Right
-status.Font = Enum.Font.GothamSemibold
+local hideKeyButton = createButton(
+    extraSection,
+    "HideKeyButton",
+    UDim2.fromOffset(220, 30),
+    UDim2.new(1, -230, 0, 16),
+    "UI KEY  [RIGHT ALT]",
+    COLORS.panel2,
+    9
+)
+hideKeyButton.ZIndex = 13
+addStroke(hideKeyButton, COLORS.stroke, 1, 0.12)
+
+-- =========================================================
+-- Small hover polish for buttons
+-- =========================================================
+
+local function addButtonHover(button, baseTransparency)
+    baseTransparency = baseTransparency or 0
+
+    addConnection(button.MouseEnter:Connect(function()
+        if button.Parent then
+            button.BackgroundTransparency = math.max(0, baseTransparency - 0.06)
+        end
+    end))
+
+    addConnection(button.MouseLeave:Connect(function()
+        if button.Parent then
+            button.BackgroundTransparency = baseTransparency
+        end
+    end))
+end
+
+for _, button in ipairs({
+    lockButton, teamButton, targetButton, holdKeyButton,
+    espButton, auraButton, boxButton, skeletonButton, nameButton,
+    hideKeyButton, minimizeButton
+}) do
+    addButtonHover(button, button.BackgroundTransparency)
+end
 
 -- =========================================================
 -- 5.1 Initial centered placement / responsive clamp
@@ -1495,10 +1849,10 @@ local function setUiMinimized(minimized)
     content.Visible = not minimized
 
     if minimized then
-        panel.Size = UDim2.fromOffset(330, 56)
+        panel.Size = UDim2.fromOffset(400, 76)
         minimizeButton.Text = "+"
     else
-        panel.Size = UDim2.fromOffset(330, 540)
+        panel.Size = UDim2.fromOffset(400, 660)
         minimizeButton.Text = "—"
     end
 
@@ -2019,7 +2373,7 @@ updateTargetUi()
 updateKeyUi()
 setUiVisible(true)
 setUiMinimized(false)
-setStatus("READY", COLORS.subtext)
+setStatus("BOX OFF", COLORS.subtext)
 refreshAllEsp()
 
 -- =========================================================
