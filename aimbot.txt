@@ -78,6 +78,12 @@ local maxRadius = 400
 local currentRadius = 150
 local isDraggingFov = false
 
+-- Aim smoothing: 0 = 100% snap, 1 = 90%, ... 9 = 10%, 10 = very smooth (5%).
+local smoothLevel = 0
+local minSmoothLevel = 0
+local maxSmoothLevel = 10
+local isDraggingSmooth = false
+
 local highlightName = "AutoGameMenuHighlight"
 local espGuiName = "AutoGameMenuESP"
 
@@ -85,6 +91,15 @@ local connections = {}
 local playerConnections = {}
 local espObjects = {}
 local espBuildTokens = {}
+
+-- Track the locked target's last position so death/respawn systems that
+-- teleport a corpse/staging character far below the map can be detected even
+-- when the Humanoid has not reported Health == 0 yet.
+local lockedTargetMotion = {
+    character = nil,
+    lastPosition = nil,
+    lastTime = 0,
+}
 
 local function addConnection(connection)
     if connection then
@@ -231,7 +246,7 @@ espOverlay.Parent = screenGui
 
 local panel = Instance.new("Frame")
 panel.Name = "MenuFrame"
-panel.Size = UDim2.fromOffset(330, 500)
+panel.Size = UDim2.fromOffset(330, 540)
 panel.AnchorPoint = Vector2.new(0.5, 0.5)
 panel.Position = UDim2.fromScale(0.5, 0.5)
 panel.BackgroundColor3 = COLORS.background
@@ -300,8 +315,8 @@ end
 
 local lockSection = createSection(content, 0, 104, "LOCK", "เปิดระบบ แล้วกดปุ่มที่ตั้งไว้ • ล็อกเฉพาะเป้าที่อยู่ในวง FOV")
 local espSection = createSection(content, 112, 158, "ESP", "เปิด ESP หลักก่อน แล้วเลือกสิ่งที่อยากเห็นแยกกัน")
-local fovSection = createSection(content, 278, 104, "FOV", "เลื่อนขนาดวงที่ใช้คัดเลือกเป้าหมาย")
-local extraSection = createSection(content, 390, 42, "SHORTCUTS", "กดปุ่มเพื่อเปลี่ยนคีย์ได้ทุกเวลา")
+local fovSection = createSection(content, 278, 132, "FOV", "เลื่อนขนาดวง และความนุ่มของการดูดเป้า")
+local extraSection = createSection(content, 420, 42, "SHORTCUTS", "กดปุ่มเพื่อเปลี่ยนคีย์ได้ทุกเวลา")
 
 local lockButton = createButton(lockSection, "LockButton", UDim2.new(0.55, -14, 0, 34), UDim2.fromOffset(10, 47), "LOCK  OFF", COLORS.red, 12)
 local teamButton = createButton(lockSection, "TeamButton", UDim2.new(0.45, -6, 0, 34), UDim2.new(0.55, 0, 0, 47), "TEAM CHECK • ON", COLORS.green, 9)
@@ -348,6 +363,39 @@ fovKnob.BorderSizePixel = 0
 fovKnob.AutoButtonColor = false
 fovKnob.Parent = fovSlider
 addCorner(fovKnob, 999)
+
+local smoothText = createLabel(fovSection, "SMOOTH", UDim2.new(0.5, -10, 0, 18), UDim2.fromOffset(10, 88), 9, COLORS.subtext)
+smoothText.Font = Enum.Font.GothamBold
+
+local smoothValue = createLabel(fovSection, "0 • 100%", UDim2.new(0.5, -10, 0, 18), UDim2.new(0.5, 0, 0, 88), 10, COLORS.text)
+smoothValue.TextXAlignment = Enum.TextXAlignment.Right
+smoothValue.Font = Enum.Font.GothamBold
+
+local smoothSlider = Instance.new("Frame")
+smoothSlider.Name = "SmoothSlider"
+smoothSlider.Size = UDim2.new(1, -20, 0, 10)
+smoothSlider.Position = UDim2.fromOffset(10, 112)
+smoothSlider.BackgroundColor3 = COLORS.panel2
+smoothSlider.BorderSizePixel = 0
+smoothSlider.Parent = fovSection
+addCorner(smoothSlider, 999)
+
+local smoothFill = Instance.new("Frame")
+smoothFill.Size = UDim2.new(0, 0, 1, 0)
+smoothFill.BackgroundColor3 = COLORS.purple
+smoothFill.BorderSizePixel = 0
+smoothFill.Parent = smoothSlider
+addCorner(smoothFill, 999)
+
+local smoothKnob = Instance.new("TextButton")
+smoothKnob.Size = UDim2.fromOffset(18, 18)
+smoothKnob.Position = UDim2.new(0, -9, 0, -4)
+smoothKnob.Text = ""
+smoothKnob.BackgroundColor3 = COLORS.white
+smoothKnob.BorderSizePixel = 0
+smoothKnob.AutoButtonColor = false
+smoothKnob.Parent = smoothSlider
+addCorner(smoothKnob, 999)
 
 local hideKeyButton = createButton(extraSection, "HideKeyButton", UDim2.new(1, -20, 0, 18), UDim2.fromOffset(10, 20), "UI KEY  [INSERT]", COLORS.panel2, 8)
 
@@ -431,6 +479,82 @@ local function isHumanoidAlive(humanoid)
     end
 
     return true
+end
+
+local function resetLockedTargetMotion()
+    lockedTargetMotion.character = nil
+    lockedTargetMotion.lastPosition = nil
+    lockedTargetMotion.lastTime = 0
+end
+
+local function updateLockedTargetMotion(character)
+    if not character then
+        resetLockedTargetMotion()
+        return false
+    end
+
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root or not root:IsA("BasePart") then
+        root = character:FindFirstChild("Head")
+    end
+    if not root or not root:IsA("BasePart") then
+        return false
+    end
+
+    local now = os.clock()
+    local position = root.Position
+
+    if lockedTargetMotion.character ~= character then
+        lockedTargetMotion.character = character
+        lockedTargetMotion.lastPosition = position
+        lockedTargetMotion.lastTime = now
+        return false
+    end
+
+    local previousPosition = lockedTargetMotion.lastPosition
+    local previousTime = lockedTargetMotion.lastTime
+    lockedTargetMotion.lastPosition = position
+    lockedTargetMotion.lastTime = now
+
+    if previousPosition and previousTime > 0 then
+        local dt = now - previousTime
+        local deltaY = position.Y - previousPosition.Y
+
+        -- Hypershot-like respawn flow can move a dead character sharply below
+        -- the map before the new character is spawned. Treat a large, sudden
+        -- downward teleport as a staging/death transition.
+        if dt > 0 and deltaY <= -30 and (deltaY / dt) <= -120 then
+            return true
+        end
+    end
+
+    -- Hard safety net for a corpse/staging model placed far below the normal
+    -- playable area. This does not affect ordinary targets at normal map height.
+    if position.Y < -150 then
+        return true
+    end
+
+    return false
+end
+
+-- Non-mutating safety check used during target acquisition as well.
+local function isLikelyDeathStagingCharacter(character)
+    if not character then
+        return true
+    end
+
+    local humanoid = getCharacterHumanoid(character)
+    if not isHumanoidAlive(humanoid) then
+        return true
+    end
+
+    local root = character:FindFirstChild("HumanoidRootPart")
+        or character:FindFirstChild("Head")
+    if not root or not root:IsA("BasePart") then
+        return false
+    end
+
+    return root.Position.Y < -150
 end
 
 local function getAimPart(character)
@@ -1081,16 +1205,25 @@ end
 -- 8. Target selection
 -- =========================================================
 
-local function getTargetClosestToScreenCenter()
+-- Select exactly ONE target.
+-- 1) Only candidates inside the configured FOV are considered.
+-- 2) Exactly one candidate is returned: the aim point closest to screen center.
+-- 3) If two are effectively tied on screen, use world distance as a tie-breaker.
+-- Once acquired, the lock stays on this single target until release/invalid/death.
+local function selectSingleTargetInFov()
     local camera = getCamera()
     if not camera then
-        return nil
+        return nil, nil
     end
 
     local closestCharacter = nil
     local closestPart = nil
-    local shortestDistance = math.huge
-    local viewportCenter = Vector2.new(camera.ViewportSize.X * 0.5, camera.ViewportSize.Y * 0.5)
+    local shortestScreenDistance = math.huge
+    local closestWorldDistance = math.huge
+    local viewportCenter = Vector2.new(
+        camera.ViewportSize.X * 0.5,
+        camera.ViewportSize.Y * 0.5
+    )
 
     for _, player in ipairs(Players:GetPlayers()) do
         if shouldTargetPlayer(player) then
@@ -1098,17 +1231,30 @@ local function getTargetClosestToScreenCenter()
             local humanoid = getCharacterHumanoid(character)
             local aimPart = getAimPart(character)
 
-            if character and humanoid and isHumanoidAlive(humanoid) and aimPart then
+            if character and humanoid and isHumanoidAlive(humanoid) and aimPart
+                and aimPart:IsDescendantOf(workspace)
+                and not isLikelyDeathStagingCharacter(character) then
                 local screenPoint, onScreen = camera:WorldToViewportPoint(aimPart.Position)
 
                 if onScreen and screenPoint.Z > 0 then
                     local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
-                    local distanceToCenter = (screenPos - viewportCenter).Magnitude
+                    local screenDistance = (screenPos - viewportCenter).Magnitude
 
-                    if distanceToCenter <= currentRadius and distanceToCenter < shortestDistance then
-                        shortestDistance = distanceToCenter
-                        closestCharacter = character
-                        closestPart = aimPart
+                    if screenDistance <= currentRadius then
+                        -- Primary rule: closest to the reticle center.
+                        -- Secondary rule: if two aim points land almost exactly
+                        -- together on-screen, prefer the physically closer target.
+                        local worldDistance = (aimPart.Position - camera.CFrame.Position).Magnitude
+                        local isBetter = screenDistance < shortestScreenDistance
+                            or (math.abs(screenDistance - shortestScreenDistance) < 0.01
+                                and worldDistance < closestWorldDistance)
+
+                        if isBetter then
+                            shortestScreenDistance = screenDistance
+                            closestWorldDistance = worldDistance
+                            closestCharacter = character
+                            closestPart = aimPart
+                        end
                     end
                 end
             end
@@ -1164,12 +1310,16 @@ local function isValidLockedTarget(character)
         return false
     end
 
-    -- Lock is strictly FOV-bound: once the target leaves the configured circle,
-    -- it is no longer a valid lock target.
-    if not isTargetInsideFov(character) then
+    -- Extra safety for games that teleport a dead/staging character below the
+    -- map before Roblox reports the final death state.
+    if updateLockedTargetMotion(character) then
         return false
     end
 
+    -- FOV is used to ACQUIRE a target. Once a target is locked, keep that
+    -- target while the lock button remains held. Mouse movement therefore does
+    -- not break the lock. The target is still rejected if it dies, disappears,
+    -- becomes invalid, fails Team Check, or is moved into a death/staging area.
     return true
 end
 
@@ -1191,6 +1341,7 @@ local function updateLockUi()
         lockButton.BackgroundColor3 = COLORS.red
         isHoldingKey = false
         lockedTarget = nil
+        resetLockedTargetMotion()
     end
 
     updateFovVisibility()
@@ -1300,6 +1451,45 @@ local function updateFovFromInput(input)
     updateFovUi(alpha)
 end
 
+local function getSmoothPercent(level)
+    if level <= 9 then
+        return 100 - (level * 10)
+    end
+
+    return 5
+end
+
+local function getSmoothFactor()
+    -- 0 = full snap, higher levels reduce the amount of rotation applied per frame.
+    if smoothLevel <= 9 then
+        return (10 - smoothLevel) / 10
+    end
+
+    return 0.05
+end
+
+local function updateSmoothUiFromLevel(level)
+    smoothLevel = math.clamp(math.floor(level + 0.5), minSmoothLevel, maxSmoothLevel)
+    local alpha = smoothLevel / maxSmoothLevel
+    local percent = getSmoothPercent(smoothLevel)
+
+    smoothFill.Size = UDim2.new(alpha, 0, 1, 0)
+    smoothKnob.Position = UDim2.new(alpha, -9, 0, -4)
+    smoothValue.Text = tostring(smoothLevel) .. " • " .. tostring(percent) .. "%"
+end
+
+local function updateSmoothFromInput(input)
+    local width = smoothSlider.AbsoluteSize.X
+    if width <= 0 then
+        return
+    end
+
+    local x = smoothSlider.AbsolutePosition.X
+    local alpha = math.clamp((input.Position.X - x) / width, 0, 1)
+    local level = alpha * maxSmoothLevel
+    updateSmoothUiFromLevel(level)
+end
+
 local function setUiMinimized(minimized)
     uiMinimized = minimized
     content.Visible = not minimized
@@ -1308,7 +1498,7 @@ local function setUiMinimized(minimized)
         panel.Size = UDim2.fromOffset(330, 56)
         minimizeButton.Text = "+"
     else
-        panel.Size = UDim2.fromOffset(330, 500)
+        panel.Size = UDim2.fromOffset(330, 540)
         minimizeButton.Text = "—"
     end
 
@@ -1370,6 +1560,17 @@ local function monitorPlayer(player)
             table.insert(list, humanoid.Died:Connect(function()
                 if lockedTarget == character then
                     lockedTarget = nil
+                    resetLockedTargetMotion()
+                    if isHoldingKey then
+                        setStatus("TARGET DEAD - SEARCHING", COLORS.orange)
+                    end
+                end
+            end))
+
+            table.insert(list, humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                if humanoid.Health <= 0 and lockedTarget == character then
+                    lockedTarget = nil
+                    resetLockedTargetMotion()
                     if isHoldingKey then
                         setStatus("TARGET DEAD - SEARCHING", COLORS.orange)
                     end
@@ -1379,6 +1580,8 @@ local function monitorPlayer(player)
             table.insert(list, humanoid.StateChanged:Connect(function(_, newState)
                 if newState == Enum.HumanoidStateType.Dead and lockedTarget == character then
                     lockedTarget = nil
+                    resetLockedTargetMotion()
+                    resetLockedTargetMotion()
                     if isHoldingKey then
                         setStatus("TARGET DEAD - SEARCHING", COLORS.orange)
                     end
@@ -1410,6 +1613,7 @@ local function monitorPlayer(player)
         table.insert(list, player.CharacterRemoving:Connect(function(character)
             if lockedTarget == character then
                 lockedTarget = nil
+                resetLockedTargetMotion()
             end
 
             local data = espObjects[player]
@@ -1544,7 +1748,7 @@ addConnection(targetButton.MouseButton1Click:Connect(function()
     targetPartMode = (targetPartMode == "Head") and "Body" or "Head"
     lockedTarget = nil
     if isHoldingKey then
-        local target = getTargetClosestToScreenCenter()
+        local target = selectSingleTargetInFov()
         if target then
             lockedTarget = target
             setStatus("TARGET: " .. string.upper(targetPartMode), COLORS.green)
@@ -1635,6 +1839,36 @@ addConnection(UserInputService.InputEnded:Connect(function(input)
     end
 end))
 
+addConnection(smoothKnob.MouseButton1Down:Connect(function()
+    isDraggingSmooth = true
+end))
+
+addConnection(smoothSlider.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingSmooth = true
+        updateSmoothFromInput(input)
+    end
+end))
+
+addConnection(UserInputService.InputChanged:Connect(function(input)
+    if not isDraggingSmooth then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        updateSmoothFromInput(input)
+    end
+end))
+
+addConnection(UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingSmooth = false
+    end
+end))
+
 addConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
     -- Lock binding can be any keyboard key OR Mouse1-4.
     if waitingForHoldKey then
@@ -1684,9 +1918,11 @@ addConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
         isHoldingKey = true
         lockedTarget = nil
 
-        local target = getTargetClosestToScreenCenter()
+        local target = selectSingleTargetInFov()
         if target then
             lockedTarget = target
+            resetLockedTargetMotion()
+            updateLockedTargetMotion(lockedTarget)
             setStatus("TARGET LOCKED", COLORS.green)
         else
             isHoldingKey = false
@@ -1699,6 +1935,7 @@ addConnection(UserInputService.InputEnded:Connect(function(input)
     if lockInputMatches(input) then
         isHoldingKey = false
         lockedTarget = nil
+        resetLockedTargetMotion()
         if lockEnabled then
             setStatus("LOCK READY", COLORS.subtext)
         end
@@ -1714,17 +1951,23 @@ addConnection(RunService.RenderStepped:Connect(function()
         return
     end
 
-    -- If the current target died, never keep looking at its old/death position.
-    -- Reacquire a living target only after the dead character is rejected.
+    -- The FOV is checked when acquiring the target. After acquisition, keep
+    -- the same target until the lock button is released or the target becomes
+    -- invalid/dead. This prevents normal mouse movement from dropping lock.
+    -- Death/respawn staging is checked independently so the camera never
+    -- follows a corpse that the game temporarily moves below the map.
     if not lockedTarget or not isValidLockedTarget(lockedTarget) then
-        local replacement = getTargetClosestToScreenCenter()
+        local replacement = selectSingleTargetInFov()
         if replacement then
             lockedTarget = replacement
+            resetLockedTargetMotion()
+            updateLockedTargetMotion(lockedTarget)
             setStatus("TARGET IN FOV", COLORS.green)
         else
             -- Nothing is currently inside the configured FOV. Do not rotate
             -- the camera toward a dead/off-screen player.
             lockedTarget = nil
+            resetLockedTargetMotion()
             return
         end
     end
@@ -1735,20 +1978,30 @@ addConnection(RunService.RenderStepped:Connect(function()
     end
 
     local targetHumanoid = getCharacterHumanoid(lockedTarget)
-    if not isHumanoidAlive(targetHumanoid) then
+    if not isHumanoidAlive(targetHumanoid) or isLikelyDeathStagingCharacter(lockedTarget) then
         lockedTarget = nil
+        resetLockedTargetMotion()
         return
     end
 
     local aimPart = getAimPart(lockedTarget)
     if not aimPart or not aimPart:IsDescendantOf(workspace) then
         lockedTarget = nil
+        resetLockedTargetMotion()
         return
     end
 
     local cameraPosition = camera.CFrame.Position
     local targetPosition = aimPart.Position
-    camera.CFrame = CFrame.lookAt(cameraPosition, targetPosition)
+    local desiredCFrame = CFrame.lookAt(cameraPosition, targetPosition)
+    local smoothFactor = getSmoothFactor()
+
+    -- Keep camera position fixed and smoothly rotate toward the target.
+    if smoothFactor >= 0.999 then
+        camera.CFrame = desiredCFrame
+    else
+        camera.CFrame = camera.CFrame:Lerp(desiredCFrame, smoothFactor)
+    end
 end))
 
 -- =========================================================
@@ -1757,6 +2010,7 @@ end))
 
 local initialAlpha = (currentRadius - minRadius) / (maxRadius - minRadius)
 updateFovUi(initialAlpha)
+updateSmoothUiFromLevel(smoothLevel)
 updateEspUi()
 updateVisualUi()
 updateLockUi()
