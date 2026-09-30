@@ -1,347 +1,1806 @@
--- วางไว้ใน LocalScript ที่ StarterPlayerScripts
+-- AutoGameMenu - improved FFA/ESP/UI version
+-- LocalScript / client-side execution
+--
+-- Improvements:
+-- 1) Better target detection for FFA and custom character rigs.
+-- 2) ESP is rebuilt on every CharacterAdded/respawn and uses a BillboardGui fallback.
+-- 3) Cleaner, compact UI with clearer controls and a minimize button.
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
 
 local localPlayer = Players.LocalPlayer
-local camera = workspace.CurrentCamera
+if not localPlayer then
+    return
+end
 
--- 1. สร้าง UI และวงกลม FOV
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AutoGameMenu"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+-- =========================================================
+-- 0. Cleanup previous instance
+-- =========================================================
 
--- วงกลม FOV (แสดงกลางจอสำหรับกำหนดระยะล็อก)
-local fovCircle = Drawing.new("Circle")
-fovCircle.Visible = false
-fovCircle.Transparency = 0.8
-fovCircle.Color = Color3.fromRGB(0, 255, 200)
-fovCircle.Thickness = 1.5
-fovCircle.NumSides = 64
-fovCircle.Filled = false
-fovCircle.Radius = 150
+local sharedEnv = _G
+if type(getgenv) == "function" then
+    local ok, env = pcall(getgenv)
+    if ok and type(env) == "table" then
+        sharedEnv = env
+    end
+end
 
--- กรอบเมนูด้านขวาบน
-local frame = Instance.new("Frame")
-frame.Name = "MenuFrame"
-frame.Size = UDim2.new(0, 200, 0, 230)
-frame.Position = UDim2.new(1, -220, 0, 20)
-frame.BackgroundTransparency = 0.5
-frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-frame.Parent = screenGui
+if type(sharedEnv.__AutoGameMenuCleanup) == "function" then
+    pcall(sharedEnv.__AutoGameMenuCleanup)
+end
 
--- ปุ่ม ESP
-local espButton = Instance.new("TextButton")
-espButton.Name = "ESPButton"
-espButton.Size = UDim2.new(1, -10, 0, 32)
-espButton.Position = UDim2.new(0, 5, 0, 5)
-espButton.Text = "ESP: ON"
-espButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-espButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-espButton.TextSize = 14
-espButton.Font = Enum.Font.GothamBold
-espButton.Parent = frame
+-- =========================================================
+-- 1. Theme / state
+-- =========================================================
 
--- ปุ่มเปิด/ปิดระบบล็อก
-local systemButton = Instance.new("TextButton")
-systemButton.Name = "SystemButton"
-systemButton.Size = UDim2.new(1, -10, 0, 32)
-systemButton.Position = UDim2.new(0, 5, 0, 42)
-systemButton.Text = "Lock System: OFF"
-systemButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-systemButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-systemButton.TextSize = 14
-systemButton.Font = Enum.Font.GothamBold
-systemButton.Parent = frame
+local COLORS = {
+    background = Color3.fromRGB(18, 20, 25),
+    panel = Color3.fromRGB(24, 27, 34),
+    panel2 = Color3.fromRGB(31, 35, 44),
+    stroke = Color3.fromRGB(58, 64, 76),
+    text = Color3.fromRGB(240, 243, 248),
+    subtext = Color3.fromRGB(158, 165, 178),
+    accent = Color3.fromRGB(72, 180, 255),
+    green = Color3.fromRGB(62, 196, 116),
+    red = Color3.fromRGB(224, 78, 90),
+    orange = Color3.fromRGB(229, 155, 67),
+    purple = Color3.fromRGB(156, 108, 226),
+    blue = Color3.fromRGB(65, 150, 255),
+    white = Color3.fromRGB(255, 255, 255),
+}
 
--- ปุ่มเปลี่ยนคีย์ลัดสำหรับ "กดค้างเพื่อล็อก"
-local bindButton = Instance.new("TextButton")
-bindButton.Name = "BindButton"
-bindButton.Size = UDim2.new(1, -10, 0, 32)
-bindButton.Position = UDim2.new(0, 5, 0, 79)
-bindButton.Text = "Hold Key: [ E ]"
-bindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-bindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-bindButton.TextSize = 12
-bindButton.Font = Enum.Font.GothamBold
-bindButton.Parent = frame
-
--- ป้ายข้อความและ Slider ปรับขนาดวงกลม FOV
-local fovLabel = Instance.new("TextLabel")
-fovLabel.Size = UDim2.new(1, -10, 0, 20)
-fovLabel.Position = UDim2.new(0, 5, 0, 116)
-fovLabel.BackgroundTransparency = 1
-fovLabel.Text = "FOV Radius: 150"
-fovLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-fovLabel.TextSize = 12
-fovLabel.Font = Enum.Font.GothamBold
-fovLabel.Parent = frame
-
-local fovSliderBg = Instance.new("Frame")
-fovSliderBg.Size = UDim2.new(1, -10, 0, 12)
-fovSliderBg.Position = UDim2.new(0, 5, 0, 138)
-fovSliderBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-fovSliderBg.BorderSizePixel = 0
-fovSliderBg.Parent = frame
-
-local fovSliderFill = Instance.new("Frame")
-fovSliderFill.Size = UDim2.new(0.35, 0, 1, 0)
-fovSliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-fovSliderFill.BorderSizePixel = 0
-fovSliderFill.Parent = fovSliderBg
-
-local fovButton = Instance.new("TextButton")
-fovButton.Size = UDim2.new(0, 16, 0, 20)
-fovButton.Position = UDim2.new(0.35, -8, 0, -4)
-fovButton.Text = ""
-fovButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-fovButton.Parent = fovSliderBg
-
--- ปุ่มซ่อน/แสดง UI
-local hideBindButton = Instance.new("TextButton")
-hideBindButton.Name = "HideBindButton"
-hideBindButton.Size = UDim2.new(1, -10, 0, 32)
-hideBindButton.Position = UDim2.new(0, 5, 0, 176)
-hideBindButton.Text = "Hide UI Key: [ Insert ]"
-hideBindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-hideBindButton.BackgroundColor3 = Color3.fromRGB(80, 50, 120)
-hideBindButton.TextSize = 12
-hideBindButton.Font = Enum.Font.GothamBold
-hideBindButton.Parent = frame
-
--- 2. ตัวแปรสถานะ
 local espEnabled = true
-local isSystemActive = false
-local isHoldingKey = false
+local espAuraEnabled = true
+local espBoxEnabled = false
+local espSkeletonEnabled = false
+local espNameEnabled = true
+local lockEnabled = false
+local teamCheckEnabled = true
+local targetPartMode = "Head" -- "Head" or "Body"
 local lockedTarget = nil
-local isUiVisible = true
+local isHoldingKey = false
+
+local uiVisible = true
+local uiMinimized = false
 
 local holdKey = Enum.KeyCode.E
-local hideKey = Enum.KeyCode.Insert
-
+local holdMouseButton = Enum.UserInputType.MouseButton1
+local holdBindKind = "Keyboard" -- "Keyboard" or "Mouse"
+local hideKey = Enum.KeyCode.RightAlt
 local waitingForHoldKey = false
 local waitingForHideKey = false
 
-local minRadius = 50
+local minRadius = 40
 local maxRadius = 400
 local currentRadius = 150
 local isDraggingFov = false
 
--- 3. ระบบ ESP รองรับผู้เล่นใหม่ที่เพิ่งจอยเข้ามาอัตโนมัติ
-local function setupPlayerGlow(character, player)
-	if player == localPlayer then return end
-	if not character then return end
-	
-	if not character:FindFirstChild("PlayerAuraHighlight") then
-		local highlight = Instance.new("Highlight")
-		highlight.Name = "PlayerAuraHighlight"
-		highlight.Adornee = character
-		highlight.FillTransparency = 0.5
-		highlight.OutlineTransparency = 0
-		highlight.FillColor = Color3.fromRGB(0, 255, 200)
-		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		highlight.Enabled = espEnabled
-		highlight.Parent = character
-	end
+local highlightName = "AutoGameMenuHighlight"
+local espGuiName = "AutoGameMenuESP"
+
+local connections = {}
+local playerConnections = {}
+local espObjects = {}
+local espBuildTokens = {}
+
+local function addConnection(connection)
+    if connection then
+        table.insert(connections, connection)
+    end
+    return connection
 end
+
+local function disconnectList(list)
+    if not list then
+        return
+    end
+    for _, connection in ipairs(list) do
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+end
+
+local function disconnectAll()
+    disconnectList(connections)
+    connections = {}
+
+    for player, list in pairs(playerConnections) do
+        disconnectList(list)
+        playerConnections[player] = nil
+    end
+
+    for player, object in pairs(espObjects) do
+        if object and object.Destroy then
+            pcall(function()
+                object:Destroy()
+            end)
+        end
+        espObjects[player] = nil
+    end
+
+    pcall(function()
+        RunService:UnbindFromRenderStep("AutoGameMenuCameraLock")
+    end)
+end
+
+-- =========================================================
+-- 2. UI helpers
+-- =========================================================
+
+local function addCorner(instance, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 8)
+    corner.Parent = instance
+    return corner
+end
+
+local function addStroke(instance, color, thickness, transparency)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or COLORS.stroke
+    stroke.Thickness = thickness or 1
+    stroke.Transparency = transparency or 0
+    stroke.Parent = instance
+    return stroke
+end
+
+local function createLabel(parent, text, size, position, textSize, color)
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = size
+    label.Position = position
+    label.Text = text
+    label.TextColor3 = color or COLORS.text
+    label.TextSize = textSize or 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = parent
+    return label
+end
+
+local function createButton(parent, name, size, position, text, color, textSize)
+    local button = Instance.new("TextButton")
+    button.Name = name
+    button.Size = size
+    button.Position = position
+    button.BackgroundColor3 = color or COLORS.panel2
+    button.BorderSizePixel = 0
+    button.Text = text
+    button.TextColor3 = COLORS.text
+    button.TextSize = textSize or 12
+    button.Font = Enum.Font.GothamSemibold
+    button.AutoButtonColor = false
+    button.Parent = parent
+    addCorner(button, 7)
+    return button
+end
+
+-- =========================================================
+-- 3. ScreenGui
+-- =========================================================
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AutoGameMenu"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local function parentScreenGui(gui)
+    if type(syn) == "table" and type(syn.protect_gui) == "function" then
+        pcall(function()
+            syn.protect_gui(gui)
+        end)
+        gui.Parent = CoreGui
+    else
+        gui.Parent = localPlayer:WaitForChild("PlayerGui")
+    end
+end
+
+parentScreenGui(screenGui)
+
+-- =========================================================
+-- 4. FOV circle
+-- =========================================================
+
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOVCircle"
+fovCircle.Size = UDim2.fromOffset(currentRadius * 2, currentRadius * 2)
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Position = UDim2.fromScale(0.5, 0.5)
+fovCircle.BackgroundTransparency = 1
+fovCircle.Visible = false
+fovCircle.Parent = screenGui
+addCorner(fovCircle, 999)
+addStroke(fovCircle, COLORS.accent, 1.5, 0.05)
+
+local espOverlay = Instance.new("Frame")
+espOverlay.Name = "ESPOverlay"
+espOverlay.Size = UDim2.fromScale(1, 1)
+espOverlay.Position = UDim2.fromScale(0, 0)
+espOverlay.BackgroundTransparency = 1
+espOverlay.BorderSizePixel = 0
+espOverlay.ZIndex = 2
+espOverlay.Parent = screenGui
+
+-- =========================================================
+-- 5. Clean centered UI
+-- =========================================================
+
+local panel = Instance.new("Frame")
+panel.Name = "MenuFrame"
+panel.Size = UDim2.fromOffset(330, 500)
+panel.AnchorPoint = Vector2.new(0.5, 0.5)
+panel.Position = UDim2.fromScale(0.5, 0.5)
+panel.BackgroundColor3 = COLORS.background
+panel.BackgroundTransparency = 0.02
+panel.BorderSizePixel = 0
+panel.Parent = screenGui
+addCorner(panel, 14)
+addStroke(panel, COLORS.stroke, 1.2)
+
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 56)
+header.BackgroundColor3 = COLORS.panel
+header.BorderSizePixel = 0
+header.Parent = panel
+addCorner(header, 14)
+
+local headerMask = Instance.new("Frame")
+headerMask.Size = UDim2.new(1, 0, 0, 14)
+headerMask.Position = UDim2.new(0, 0, 1, -14)
+headerMask.BackgroundColor3 = COLORS.panel
+headerMask.BorderSizePixel = 0
+headerMask.Parent = header
+
+local accentBar = Instance.new("Frame")
+accentBar.Size = UDim2.fromOffset(4, 34)
+accentBar.Position = UDim2.fromOffset(14, 11)
+accentBar.BackgroundColor3 = COLORS.accent
+accentBar.BorderSizePixel = 0
+accentBar.Parent = header
+addCorner(accentBar, 4)
+
+local title = createLabel(header, "AUTO CONTROL", UDim2.new(1, -86, 0, 22), UDim2.fromOffset(28, 7), 16, COLORS.text)
+title.Font = Enum.Font.GothamBold
+
+local subtitle = createLabel(header, "ESP  •  LOCK  •  FOV", UDim2.new(1, -90, 0, 16), UDim2.fromOffset(28, 29), 9, COLORS.subtext)
+
+local minimizeButton = createButton(header, "Minimize", UDim2.fromOffset(34, 32), UDim2.new(1, -46, 0, 12), "—", COLORS.panel2, 16)
+addStroke(minimizeButton, COLORS.stroke, 1)
+
+local content = Instance.new("Frame")
+content.Name = "Content"
+content.Size = UDim2.new(1, -24, 1, -68)
+content.Position = UDim2.fromOffset(12, 62)
+content.BackgroundTransparency = 1
+content.Parent = panel
+
+local function createSection(parent, y, height, titleText, subtitleText)
+    local section = Instance.new("Frame")
+    section.Size = UDim2.new(1, 0, 0, height)
+    section.Position = UDim2.fromOffset(0, y)
+    section.BackgroundColor3 = COLORS.panel
+    section.BackgroundTransparency = 0.12
+    section.BorderSizePixel = 0
+    section.Parent = parent
+    addCorner(section, 10)
+    addStroke(section, COLORS.stroke, 0.8, 0.35)
+
+    local titleLabel = createLabel(section, titleText, UDim2.new(1, -20, 0, 18), UDim2.fromOffset(10, 7), 11, COLORS.text)
+    titleLabel.Font = Enum.Font.GothamBold
+
+    local subLabel = createLabel(section, subtitleText, UDim2.new(1, -20, 0, 16), UDim2.fromOffset(10, 24), 8, COLORS.subtext)
+    subLabel.TextWrapped = true
+
+    return section
+end
+
+local lockSection = createSection(content, 0, 104, "LOCK", "เปิดระบบ แล้วกดปุ่มที่ตั้งไว้ • ล็อกเฉพาะเป้าที่อยู่ในวง FOV")
+local espSection = createSection(content, 112, 158, "ESP", "เปิด ESP หลักก่อน แล้วเลือกสิ่งที่อยากเห็นแยกกัน")
+local fovSection = createSection(content, 278, 104, "FOV", "เลื่อนขนาดวงที่ใช้คัดเลือกเป้าหมาย")
+local extraSection = createSection(content, 390, 42, "SHORTCUTS", "กดปุ่มเพื่อเปลี่ยนคีย์ได้ทุกเวลา")
+
+local lockButton = createButton(lockSection, "LockButton", UDim2.new(0.55, -14, 0, 34), UDim2.fromOffset(10, 47), "LOCK  OFF", COLORS.red, 12)
+local teamButton = createButton(lockSection, "TeamButton", UDim2.new(0.45, -6, 0, 34), UDim2.new(0.55, 0, 0, 47), "TEAM CHECK • ON", COLORS.green, 9)
+
+local targetButton = createButton(lockSection, "TargetButton", UDim2.new(0.5, -7, 0, 18), UDim2.fromOffset(10, 84), "TARGET • HEAD", COLORS.panel2, 8)
+local holdKeyButton = createButton(lockSection, "HoldKeyButton", UDim2.new(0.5, -7, 0, 18), UDim2.new(0.5, -3, 0, 84), "LOCK KEY  [E]", COLORS.panel2, 8)
+
+local espButton = createButton(espSection, "ESPButton", UDim2.new(1, -20, 0, 30), UDim2.fromOffset(10, 46), "ESP  ON", COLORS.green, 11)
+
+local auraButton = createButton(espSection, "AuraButton", UDim2.new(0.5, -7, 0, 28), UDim2.fromOffset(10, 82), "AURA  ON", COLORS.green, 9)
+local boxButton = createButton(espSection, "BoxButton", UDim2.new(0.5, -7, 0, 28), UDim2.new(0.5, -3, 0, 82), "BOX  OFF", COLORS.panel2, 9)
+local skeletonButton = createButton(espSection, "SkeletonButton", UDim2.new(0.5, -7, 0, 28), UDim2.fromOffset(10, 116), "SKELETON  OFF", COLORS.panel2, 9)
+local nameButton = createButton(espSection, "NameButton", UDim2.new(0.5, -7, 0, 28), UDim2.new(0.5, -3, 0, 116), "NAME  ON", COLORS.green, 9)
+
+local fovText = createLabel(fovSection, "FOV RADIUS", UDim2.new(0.5, -10, 0, 18), UDim2.fromOffset(10, 48), 9, COLORS.subtext)
+fovText.Font = Enum.Font.GothamBold
+
+local fovValue = createLabel(fovSection, "150", UDim2.new(0.5, -10, 0, 18), UDim2.new(0.5, 0, 0, 48), 11, COLORS.text)
+fovValue.TextXAlignment = Enum.TextXAlignment.Right
+fovValue.Font = Enum.Font.GothamBold
+
+local fovSlider = Instance.new("Frame")
+fovSlider.Name = "FOVSlider"
+fovSlider.Size = UDim2.new(1, -20, 0, 10)
+fovSlider.Position = UDim2.fromOffset(10, 76)
+fovSlider.BackgroundColor3 = COLORS.panel2
+fovSlider.BorderSizePixel = 0
+fovSlider.Parent = fovSection
+addCorner(fovSlider, 999)
+
+local fovFill = Instance.new("Frame")
+fovFill.Size = UDim2.new(0, 0, 1, 0)
+fovFill.BackgroundColor3 = COLORS.accent
+fovFill.BorderSizePixel = 0
+fovFill.Parent = fovSlider
+addCorner(fovFill, 999)
+
+local fovKnob = Instance.new("TextButton")
+fovKnob.Size = UDim2.fromOffset(18, 18)
+fovKnob.Position = UDim2.new(0, -9, 0, -4)
+fovKnob.Text = ""
+fovKnob.BackgroundColor3 = COLORS.white
+fovKnob.BorderSizePixel = 0
+fovKnob.AutoButtonColor = false
+fovKnob.Parent = fovSlider
+addCorner(fovKnob, 999)
+
+local hideKeyButton = createButton(extraSection, "HideKeyButton", UDim2.new(1, -20, 0, 18), UDim2.fromOffset(10, 20), "UI KEY  [INSERT]", COLORS.panel2, 8)
+
+local status = createLabel(header, "READY", UDim2.fromOffset(74, 16), UDim2.fromOffset(204, 10), 8, COLORS.subtext)
+status.TextXAlignment = Enum.TextXAlignment.Right
+status.Font = Enum.Font.GothamSemibold
+
+-- =========================================================
+-- 5.1 Initial centered placement / responsive clamp
+-- =========================================================
+
+local function clampPanelToViewport()
+    local camera = workspace.CurrentCamera
+    if not camera then
+        return
+    end
+
+    local viewport = camera.ViewportSize
+    local size = panel.AbsoluteSize
+    local halfW = size.X * 0.5
+    local halfH = size.Y * 0.5
+
+    local minX = halfW + 8
+    local maxX = math.max(minX, viewport.X - halfW - 8)
+    local minY = halfH + 8
+    local maxY = math.max(minY, viewport.Y - halfH - 8)
+
+    local current = Vector2.new(
+        viewport.X * panel.Position.X.Scale + panel.Position.X.Offset,
+        viewport.Y * panel.Position.Y.Scale + panel.Position.Y.Offset
+    )
+
+    local clamped = Vector2.new(
+        math.clamp(current.X, minX, maxX),
+        math.clamp(current.Y, minY, maxY)
+    )
+
+    panel.Position = UDim2.fromOffset(clamped.X, clamped.Y)
+end
+
+addConnection(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    task.defer(clampPanelToViewport)
+end))
+
+addConnection(RunService.RenderStepped:Connect(function()
+    if uiVisible and not uiMinimized then
+        clampPanelToViewport()
+    end
+end))
+
+-- =========================================================
+-- 6. Generic helpers
+-- =========================================================
+
+local function getCamera()
+    return workspace.CurrentCamera
+end
+
+local function getCharacterHumanoid(character)
+    if not character then
+        return nil
+    end
+    return character:FindFirstChildOfClass("Humanoid")
+end
+
+-- A character can remain in Workspace for a short time after dying while the
+-- game moves it to a death/respawn staging area.  We must treat that state as
+-- invalid for camera locking, even if the Model and body parts still exist.
+local function isHumanoidAlive(humanoid)
+    if not humanoid then
+        return false
+    end
+
+    if humanoid.Health <= 0 then
+        return false
+    end
+
+    local state = humanoid:GetState()
+    if state == Enum.HumanoidStateType.Dead then
+        return false
+    end
+
+    return true
+end
+
+local function getAimPart(character)
+    if not character then
+        return nil
+    end
+
+    if targetPartMode == "Head" then
+        local head = character:FindFirstChild("Head")
+        if head and head:IsA("BasePart") then
+            return head
+        end
+
+        -- Fallback for rigs without a Head part.
+        local upperTorso = character:FindFirstChild("UpperTorso")
+        if upperTorso and upperTorso:IsA("BasePart") then
+            return upperTorso
+        end
+
+        local torso = character:FindFirstChild("Torso")
+        if torso and torso:IsA("BasePart") then
+            return torso
+        end
+
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            return root
+        end
+    else
+        -- Body mode: prefer the torso, then the root.
+        local upperTorso = character:FindFirstChild("UpperTorso")
+        if upperTorso and upperTorso:IsA("BasePart") then
+            return upperTorso
+        end
+
+        local torso = character:FindFirstChild("Torso")
+        if torso and torso:IsA("BasePart") then
+            return torso
+        end
+
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            return root
+        end
+
+        -- Fallback for custom rigs.
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("BasePart") and child.Name ~= "Head" then
+                return child
+            end
+        end
+    end
+
+    -- Last-resort fallback.
+    for _, child in ipairs(character:GetChildren()) do
+        if child:IsA("BasePart") then
+            return child
+        end
+    end
+
+    return nil
+end
+
+local function sameTeam(player)
+    if player == localPlayer then
+        return true
+    end
+
+    -- If either side does not expose a Team, treat the target as an enemy.
+    -- This is important for FFA games where all players commonly have no Team.
+    if localPlayer.Team == nil or player.Team == nil then
+        return false
+    end
+
+    return localPlayer.Team == player.Team
+end
+
+local function shouldTargetPlayer(player)
+    if player == localPlayer then
+        return false
+    end
+
+    if not player.Character then
+        return false
+    end
+
+    -- When Team Check is enabled, teammates are excluded from target selection.
+    -- In FFA games where Team is nil, sameTeam() returns false, so everyone remains valid.
+    if teamCheckEnabled and sameTeam(player) then
+        return false
+    end
+
+    return true
+end
+
+local function setStatus(text, color)
+    status.Text = text
+    status.TextColor3 = color or COLORS.subtext
+end
+
+local function createVisualLine(parent, color, thickness)
+    local line = Instance.new("Frame")
+    line.BackgroundColor3 = color or COLORS.white
+    line.BackgroundTransparency = 0.05
+    line.BorderSizePixel = 0
+    line.AnchorPoint = Vector2.new(0.5, 0.5)
+    line.Size = UDim2.fromOffset(thickness or 2, thickness or 2)
+    line.Visible = false
+    line.ZIndex = 2
+    line.Parent = parent
+    return line
+end
+
+local function setScreenLine(line, pointA, pointB, thickness)
+    if not line then
+        return
+    end
+
+    local delta = pointB - pointA
+    local length = delta.Magnitude
+
+    if length < 0.5 then
+        line.Visible = false
+        return
+    end
+
+    line.Position = UDim2.fromOffset((pointA.X + pointB.X) * 0.5, (pointA.Y + pointB.Y) * 0.5)
+    line.Size = UDim2.fromOffset(length, thickness or 2)
+    line.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+    line.Visible = true
+end
+
+local function getPartAny(character, names)
+    for _, name in ipairs(names) do
+        local part = character:FindFirstChild(name)
+        if part and part:IsA("BasePart") then
+            return part
+        end
+    end
+    return nil
+end
+
+local function getSkeletonPairs(character)
+    local head = getPartAny(character, {"Head"})
+    local chest = getPartAny(character, {"UpperTorso", "Torso", "HumanoidRootPart"})
+    local pelvis = getPartAny(character, {"LowerTorso", "HumanoidRootPart", "Torso"})
+
+    local leftShoulder = getPartAny(character, {"LeftUpperArm", "Left Arm"})
+    local leftElbow = getPartAny(character, {"LeftLowerArm", "Left Arm"})
+    local leftHand = getPartAny(character, {"LeftHand", "Left Arm"})
+    local rightShoulder = getPartAny(character, {"RightUpperArm", "Right Arm"})
+    local rightElbow = getPartAny(character, {"RightLowerArm", "Right Arm"})
+    local rightHand = getPartAny(character, {"RightHand", "Right Arm"})
+
+    local leftHip = getPartAny(character, {"LeftUpperLeg", "Left Leg"})
+    local leftKnee = getPartAny(character, {"LeftLowerLeg", "Left Leg"})
+    local leftFoot = getPartAny(character, {"LeftFoot", "Left Leg"})
+    local rightHip = getPartAny(character, {"RightUpperLeg", "Right Leg"})
+    local rightKnee = getPartAny(character, {"RightLowerLeg", "Right Leg"})
+    local rightFoot = getPartAny(character, {"RightFoot", "Right Leg"})
+
+    return {
+        {head, chest},
+        {chest, pelvis},
+        {chest, leftShoulder},
+        {leftShoulder, leftElbow},
+        {leftElbow, leftHand},
+        {chest, rightShoulder},
+        {rightShoulder, rightElbow},
+        {rightElbow, rightHand},
+        {pelvis, leftHip},
+        {leftHip, leftKnee},
+        {leftKnee, leftFoot},
+        {pelvis, rightHip},
+        {rightHip, rightKnee},
+        {rightKnee, rightFoot},
+    }
+end
+
+-- =========================================================
+-- 7. ESP implementation (respawn-safe / Hypershot-friendly)
+-- =========================================================
+
+local function getEspAnchorPart(character)
+    if not character then
+        return nil
+    end
+
+    local preferred = {
+        "Head",
+        "UpperTorso",
+        "Torso",
+        "HumanoidRootPart",
+    }
+
+    for _, name in ipairs(preferred) do
+        local part = character:FindFirstChild(name)
+        if part and part:IsA("BasePart") then
+            return part
+        end
+    end
+
+    for _, child in ipairs(character:GetChildren()) do
+        if child:IsA("BasePart") then
+            return child
+        end
+    end
+
+    return nil
+end
+
+local function getEspContainer(player)
+    local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+        return nil
+    end
+
+    local name = espGuiName .. "_" .. player.UserId
+    local folder = playerGui:FindFirstChild(name)
+    if folder and folder:IsA("Folder") then
+        return folder
+    end
+
+    folder = Instance.new("Folder")
+    folder.Name = name
+    folder.Parent = playerGui
+    return folder
+end
+
+local function destroyPlayerEsp(player)
+    local data = espObjects[player]
+    if data then
+        -- Only destroy ESP-owned instances. Never destroy the Character or
+        -- its body parts stored as references in the state table.
+        for _, key in ipairs({"highlight", "billboard", "folder"}) do
+            local object = data[key]
+            if typeof(object) == "Instance" then
+                pcall(function()
+                    object:Destroy()
+                end)
+            end
+        end
+
+        for _, key in ipairs({"boxLines", "skeletonLines"}) do
+            local lines = data[key]
+            if type(lines) == "table" then
+                for _, line in ipairs(lines) do
+                    if typeof(line) == "Instance" then
+                        pcall(function()
+                            line:Destroy()
+                        end)
+                    end
+                end
+            end
+        end
+    end
+
+    espObjects[player] = nil
+
+    -- Clean any stale objects left on the current character.
+    local character = player and player.Character
+    if character then
+        local highlight = character:FindFirstChild(highlightName)
+        if highlight then
+            pcall(function() highlight:Destroy() end)
+        end
+    end
+
+    local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui")
+    if playerGui and player then
+        local folder = playerGui:FindFirstChild(espGuiName .. "_" .. player.UserId)
+        if folder then
+            pcall(function() folder:Destroy() end)
+        end
+    end
+end
+
+local function applyEspColors(player, highlight, tag, boxLines, skeletonLines)
+    local teammate = sameTeam(player)
+    local color = teammate and COLORS.blue or COLORS.red
+
+    if highlight then
+        if teammate then
+            highlight.FillColor = COLORS.blue
+            highlight.OutlineColor = COLORS.white
+        else
+            highlight.FillColor = COLORS.red
+            highlight.OutlineColor = Color3.fromRGB(255, 230, 90)
+        end
+    end
+
+    if tag then
+        tag.TextColor3 = teammate and COLORS.blue or COLORS.white
+    end
+
+    if boxLines then
+        for _, line in ipairs(boxLines) do
+            line.BackgroundColor3 = color
+        end
+    end
+
+    if skeletonLines then
+        for _, line in ipairs(skeletonLines) do
+            line.BackgroundColor3 = color
+        end
+    end
+end
+
+local function buildPlayerEsp(player, character)
+    if player == localPlayer or not player.Parent then
+        return false
+    end
+
+    if player.Character ~= character or not character or not character.Parent then
+        return false
+    end
+
+    if not espEnabled then
+        destroyPlayerEsp(player)
+        return false
+    end
+
+    -- Team Check also controls ESP: teammates should not be visible through walls.
+    if teamCheckEnabled and sameTeam(player) then
+        destroyPlayerEsp(player)
+        return false
+    end
+
+    local humanoid = getCharacterHumanoid(character)
+    local anchor = getEspAnchorPart(character)
+    if not humanoid or not anchor then
+        return false
+    end
+
+    destroyPlayerEsp(player)
+
+    local highlight = nil
+    if espAuraEnabled then
+        highlight = Instance.new("Highlight")
+        highlight.Name = highlightName
+        highlight.Adornee = character
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillTransparency = 0.72
+        highlight.OutlineTransparency = 0
+        highlight.Enabled = true
+        highlight.Parent = character
+    end
+
+    local folder = getEspContainer(player)
+    if not folder then
+        if highlight then highlight:Destroy() end
+        return false
+    end
+
+    local billboard = nil
+    local tag = nil
+    if espNameEnabled then
+        billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESPTag"
+        billboard.Adornee = anchor
+        billboard.Size = UDim2.fromOffset(170, 32)
+        billboard.StudsOffset = Vector3.new(0, 2.7, 0)
+        billboard.AlwaysOnTop = true
+        billboard.MaxDistance = 2500
+        billboard.ResetOnSpawn = false
+        billboard.Parent = folder
+
+        tag = Instance.new("TextLabel")
+        tag.Name = "Name"
+        tag.Size = UDim2.fromScale(1, 1)
+        tag.BackgroundTransparency = 1
+        tag.Text = player.DisplayName
+        tag.Font = Enum.Font.GothamBold
+        tag.TextSize = 11
+        tag.TextStrokeTransparency = 0.25
+        tag.Parent = billboard
+    end
+
+    local boxLines = {}
+    if espBoxEnabled then
+        for _ = 1, 4 do
+            table.insert(boxLines, createVisualLine(espOverlay, COLORS.white, 2))
+        end
+    end
+
+    local skeletonLines = {}
+    if espSkeletonEnabled then
+        for _ = 1, 14 do
+            table.insert(skeletonLines, createVisualLine(espOverlay, COLORS.white, 2))
+        end
+    end
+
+    applyEspColors(player, highlight, tag, boxLines, skeletonLines)
+
+    espObjects[player] = {
+        character = character,
+        highlight = highlight,
+        billboard = billboard,
+        folder = folder,
+        anchor = anchor,
+        boxLines = boxLines,
+        skeletonLines = skeletonLines,
+    }
+
+    return true
+end
+
+local function schedulePlayerEsp(player, character, reason)
+    if player == localPlayer or not player.Parent then
+        return
+    end
+
+    local previousToken = espBuildTokens[player] or 0
+    local token = previousToken + 1
+    espBuildTokens[player] = token
+
+    task.spawn(function()
+        local deadline = os.clock() + 8
+
+        while os.clock() < deadline do
+            if not espEnabled then
+                return
+            end
+
+            if not player.Parent or player.Character ~= character or not character.Parent then
+                return
+            end
+
+            if espBuildTokens[player] ~= token then
+                return
+            end
+
+            local humanoid = getCharacterHumanoid(character)
+            local anchor = getEspAnchorPart(character)
+
+            if humanoid and anchor then
+                if buildPlayerEsp(player, character) then
+                    return
+                end
+            end
+
+            task.wait(0.08)
+        end
+    end)
+end
+
+local function refreshPlayerEsp(player)
+    if player == localPlayer then
+        return
+    end
+
+    local character = player.Character
+    destroyPlayerEsp(player)
+
+    if character and character.Parent and espEnabled then
+        schedulePlayerEsp(player, character, "refresh")
+    end
+end
+
+local function refreshAllEsp()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= localPlayer then
+            refreshPlayerEsp(player)
+        end
+    end
+end
+
+local function auditPlayerEsp(player)
+    if player == localPlayer or not espEnabled then
+        return
+    end
+
+    local character = player.Character
+    if not character or not character.Parent then
+        return
+    end
+
+    if teamCheckEnabled and sameTeam(player) then
+        destroyPlayerEsp(player)
+        return
+    end
+
+    local data = espObjects[player]
+
+    if not data or data.character ~= character then
+        schedulePlayerEsp(player, character, "audit-missing")
+        return
+    end
+
+    local needsRebuild = false
+
+    if espAuraEnabled then
+        local valid = data.highlight and data.highlight.Parent and data.highlight.Adornee == character
+        if not valid then needsRebuild = true end
+    elseif data.highlight then
+        needsRebuild = true
+    end
+
+    if espNameEnabled then
+        local valid = data.billboard and data.billboard.Parent and data.billboard.Adornee and data.billboard.Adornee.Parent
+        if not valid then needsRebuild = true end
+    elseif data.billboard then
+        needsRebuild = true
+    end
+
+    if espBoxEnabled then
+        if #((data.boxLines) or {}) ~= 4 then needsRebuild = true end
+    elseif data.boxLines and #data.boxLines > 0 then
+        needsRebuild = true
+    end
+
+    if espSkeletonEnabled then
+        if #((data.skeletonLines) or {}) ~= 14 then needsRebuild = true end
+    elseif data.skeletonLines and #data.skeletonLines > 0 then
+        needsRebuild = true
+    end
+
+    if needsRebuild then
+        schedulePlayerEsp(player, character, "audit-invalid")
+        return
+    end
+
+    local tag = data.billboard and data.billboard:FindFirstChild("Name")
+    applyEspColors(player, data.highlight, tag, data.boxLines, data.skeletonLines)
+end
+
+local function projectPart(camera, part)
+    if not camera or not part or not part.Parent then
+        return nil, false
+    end
+
+    local point, onScreen = camera:WorldToViewportPoint(part.Position)
+    if not onScreen or point.Z <= 0 then
+        return nil, false
+    end
+
+    return Vector2.new(point.X, point.Y), true
+end
+
+local function updatePlayerBox(data, camera)
+    local lines = data.boxLines
+    if not lines or #lines < 4 then
+        return
+    end
+
+    local character = data.character
+    if not character or not character.Parent then
+        for _, line in ipairs(lines) do line.Visible = false end
+        return
+    end
+
+    local cf, size = character:GetBoundingBox()
+    local half = size * 0.5
+    local corners = {
+        cf:PointToWorldSpace(Vector3.new(-half.X, -half.Y, -half.Z)),
+        cf:PointToWorldSpace(Vector3.new(-half.X,  half.Y, -half.Z)),
+        cf:PointToWorldSpace(Vector3.new( half.X, -half.Y, -half.Z)),
+        cf:PointToWorldSpace(Vector3.new( half.X,  half.Y, -half.Z)),
+        cf:PointToWorldSpace(Vector3.new(-half.X, -half.Y,  half.Z)),
+        cf:PointToWorldSpace(Vector3.new(-half.X,  half.Y,  half.Z)),
+        cf:PointToWorldSpace(Vector3.new( half.X, -half.Y,  half.Z)),
+        cf:PointToWorldSpace(Vector3.new( half.X,  half.Y,  half.Z)),
+    }
+
+    local minX, minY = math.huge, math.huge
+    local maxX, maxY = -math.huge, -math.huge
+    local visibleCount = 0
+
+    for _, worldPoint in ipairs(corners) do
+        local screenPoint, visible = projectPart(camera, {Position = worldPoint, Parent = character})
+        if visible and screenPoint then
+            visibleCount += 1
+            minX = math.min(minX, screenPoint.X)
+            minY = math.min(minY, screenPoint.Y)
+            maxX = math.max(maxX, screenPoint.X)
+            maxY = math.max(maxY, screenPoint.Y)
+        end
+    end
+
+    if visibleCount == 0 or maxX <= minX or maxY <= minY then
+        for _, line in ipairs(lines) do line.Visible = false end
+        return
+    end
+
+    local topLeft = Vector2.new(minX, minY)
+    local topRight = Vector2.new(maxX, minY)
+    local bottomRight = Vector2.new(maxX, maxY)
+    local bottomLeft = Vector2.new(minX, maxY)
+
+    setScreenLine(lines[1], topLeft, topRight, 2)
+    setScreenLine(lines[2], topRight, bottomRight, 2)
+    setScreenLine(lines[3], bottomRight, bottomLeft, 2)
+    setScreenLine(lines[4], bottomLeft, topLeft, 2)
+end
+
+local function updatePlayerSkeleton(data, camera)
+    local lines = data.skeletonLines
+    if not lines or #lines < 14 then
+        return
+    end
+
+    local pairs = getSkeletonPairs(data.character)
+    for index, pair in ipairs(pairs) do
+        local line = lines[index]
+        local a, b = pair[1], pair[2]
+        if line and a and b then
+            local pa, va = projectPart(camera, a)
+            local pb, vb = projectPart(camera, b)
+            if va and vb and pa and pb then
+                setScreenLine(line, pa, pb, 2)
+            else
+                line.Visible = false
+            end
+        elseif line then
+            line.Visible = false
+        end
+    end
+end
+
+local function updateAllVisuals()
+    if not espEnabled then
+        return
+    end
+
+    local camera = getCamera()
+    if not camera then
+        return
+    end
+
+    for player, data in pairs(espObjects) do
+        if player.Parent and data and data.character == player.Character then
+            if espBoxEnabled then
+                updatePlayerBox(data, camera)
+            elseif data.boxLines then
+                for _, line in ipairs(data.boxLines) do line.Visible = false end
+            end
+
+            if espSkeletonEnabled then
+                updatePlayerSkeleton(data, camera)
+            elseif data.skeletonLines then
+                for _, line in ipairs(data.skeletonLines) do line.Visible = false end
+            end
+        end
+    end
+end
+
+-- =========================================================
+-- 8. Target selection
+-- =========================================================
+
+local function getTargetClosestToScreenCenter()
+    local camera = getCamera()
+    if not camera then
+        return nil
+    end
+
+    local closestCharacter = nil
+    local closestPart = nil
+    local shortestDistance = math.huge
+    local viewportCenter = Vector2.new(camera.ViewportSize.X * 0.5, camera.ViewportSize.Y * 0.5)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if shouldTargetPlayer(player) then
+            local character = player.Character
+            local humanoid = getCharacterHumanoid(character)
+            local aimPart = getAimPart(character)
+
+            if character and humanoid and isHumanoidAlive(humanoid) and aimPart then
+                local screenPoint, onScreen = camera:WorldToViewportPoint(aimPart.Position)
+
+                if onScreen and screenPoint.Z > 0 then
+                    local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
+                    local distanceToCenter = (screenPos - viewportCenter).Magnitude
+
+                    if distanceToCenter <= currentRadius and distanceToCenter < shortestDistance then
+                        shortestDistance = distanceToCenter
+                        closestCharacter = character
+                        closestPart = aimPart
+                    end
+                end
+            end
+        end
+    end
+
+    return closestCharacter, closestPart
+end
+
+local function isTargetInsideFov(character)
+    local camera = getCamera()
+    if not camera or not character then
+        return false
+    end
+
+    local aimPart = getAimPart(character)
+    if not aimPart or not aimPart:IsDescendantOf(workspace) then
+        return false
+    end
+
+    local screenPoint, onScreen = camera:WorldToViewportPoint(aimPart.Position)
+    if not onScreen or screenPoint.Z <= 0 then
+        return false
+    end
+
+    local viewportCenter = Vector2.new(camera.ViewportSize.X * 0.5, camera.ViewportSize.Y * 0.5)
+    local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
+    return (screenPos - viewportCenter).Magnitude <= currentRadius
+end
+
+local function isValidLockedTarget(character)
+    if not character or not character.Parent then
+        return false
+    end
+
+    local player = Players:GetPlayerFromCharacter(character)
+    if not player or player == localPlayer then
+        return false
+    end
+
+    if not shouldTargetPlayer(player) then
+        return false
+    end
+
+    local humanoid = getCharacterHumanoid(character)
+    local aimPart = getAimPart(character)
+
+    if not isHumanoidAlive(humanoid) then
+        return false
+    end
+
+    if not aimPart or not aimPart:IsDescendantOf(workspace) then
+        return false
+    end
+
+    -- Lock is strictly FOV-bound: once the target leaves the configured circle,
+    -- it is no longer a valid lock target.
+    if not isTargetInsideFov(character) then
+        return false
+    end
+
+    return true
+end
+
+-- =========================================================
+-- 9. UI state / FOV
+-- =========================================================
+
+-- FOV เป็นสถานะของระบบ LOCK ไม่ขึ้นกับการซ่อน/ย่อเมนู
+local function updateFovVisibility()
+    fovCircle.Visible = lockEnabled
+end
+
+local function updateLockUi()
+    if lockEnabled then
+        lockButton.Text = "LOCK  ON"
+        lockButton.BackgroundColor3 = COLORS.green
+    else
+        lockButton.Text = "LOCK  OFF"
+        lockButton.BackgroundColor3 = COLORS.red
+        isHoldingKey = false
+        lockedTarget = nil
+    end
+
+    updateFovVisibility()
+end
+
+local function updateEspUi()
+    espButton.Text = espEnabled and "ESP  ON" or "ESP  OFF"
+    espButton.BackgroundColor3 = espEnabled and COLORS.green or COLORS.red
+end
+
+local function updateVisualUi()
+    auraButton.Text = espAuraEnabled and "AURA  ON" or "AURA  OFF"
+    auraButton.BackgroundColor3 = espAuraEnabled and COLORS.green or COLORS.panel2
+
+    boxButton.Text = espBoxEnabled and "BOX  ON" or "BOX  OFF"
+    boxButton.BackgroundColor3 = espBoxEnabled and COLORS.accent or COLORS.panel2
+
+    skeletonButton.Text = espSkeletonEnabled and "SKELETON  ON" or "SKELETON  OFF"
+    skeletonButton.BackgroundColor3 = espSkeletonEnabled and COLORS.purple or COLORS.panel2
+
+    nameButton.Text = espNameEnabled and "NAME  ON" or "NAME  OFF"
+    nameButton.BackgroundColor3 = espNameEnabled and COLORS.green or COLORS.panel2
+end
+
+local function updateTeamUi()
+    if teamCheckEnabled then
+        teamButton.Text = "TEAM CHECK • ON"
+        teamButton.BackgroundColor3 = COLORS.green
+    else
+        teamButton.Text = "TEAM CHECK • OFF"
+        teamButton.BackgroundColor3 = COLORS.panel2
+    end
+end
+
+local function updateTargetUi()
+    if targetPartMode == "Head" then
+        targetButton.Text = "TARGET • HEAD"
+        targetButton.BackgroundColor3 = Color3.fromRGB(63, 76, 104)
+    else
+        targetButton.Text = "TARGET • BODY"
+        targetButton.BackgroundColor3 = Color3.fromRGB(72, 92, 69)
+    end
+end
+
+local function isSupportedMouseButton(inputType)
+    return inputType == Enum.UserInputType.MouseButton1
+        or inputType == Enum.UserInputType.MouseButton2
+        or inputType == Enum.UserInputType.MouseButton3
+        or inputType == Enum.UserInputType.MouseButton4
+end
+
+local function getMouseButtonLabel(inputType)
+    if inputType == Enum.UserInputType.MouseButton1 then
+        return "MOUSE1"
+    elseif inputType == Enum.UserInputType.MouseButton2 then
+        return "MOUSE2"
+    elseif inputType == Enum.UserInputType.MouseButton3 then
+        return "MOUSE3"
+    elseif inputType == Enum.UserInputType.MouseButton4 then
+        return "MOUSE4"
+    end
+
+    return "MOUSE"
+end
+
+local function getLockBindLabel()
+    if holdBindKind == "Mouse" then
+        return getMouseButtonLabel(holdMouseButton)
+    end
+
+    return holdKey.Name
+end
+
+local function lockInputMatches(input)
+    if holdBindKind == "Mouse" then
+        return isSupportedMouseButton(input.UserInputType)
+            and input.UserInputType == holdMouseButton
+    end
+
+    return input.UserInputType == Enum.UserInputType.Keyboard
+        and input.KeyCode == holdKey
+end
+
+local function updateKeyUi()
+    holdKeyButton.Text = "LOCK KEY  [" .. getLockBindLabel() .. "]"
+    hideKeyButton.Text = "UI KEY  [" .. hideKey.Name .. "]"
+end
+
+local function updateFovUi(alpha)
+    alpha = math.clamp(alpha, 0, 1)
+    currentRadius = math.floor(minRadius + (maxRadius - minRadius) * alpha + 0.5)
+    fovFill.Size = UDim2.new(alpha, 0, 1, 0)
+    fovKnob.Position = UDim2.new(alpha, -9, 0, -4)
+    fovText.Text = "FOV  " .. currentRadius
+    fovValue.Text = tostring(currentRadius)
+    fovCircle.Size = UDim2.fromOffset(currentRadius * 2, currentRadius * 2)
+end
+
+local function updateFovFromInput(input)
+    local width = fovSlider.AbsoluteSize.X
+    if width <= 0 then
+        return
+    end
+
+    local x = fovSlider.AbsolutePosition.X
+    local alpha = (input.Position.X - x) / width
+    updateFovUi(alpha)
+end
+
+local function setUiMinimized(minimized)
+    uiMinimized = minimized
+    content.Visible = not minimized
+
+    if minimized then
+        panel.Size = UDim2.fromOffset(330, 56)
+        minimizeButton.Text = "+"
+    else
+        panel.Size = UDim2.fromOffset(330, 500)
+        minimizeButton.Text = "—"
+    end
+
+    updateFovVisibility()
+end
+
+local function setUiVisible(visible)
+    uiVisible = visible
+    panel.Visible = visible
+
+    -- ซ่อนเฉพาะเมนู ไม่ซ่อน FOV
+    updateFovVisibility()
+end
+
+local function beginKeyBinding(kind)
+    waitingForHoldKey = kind == "hold"
+    waitingForHideKey = kind == "hide"
+
+    if waitingForHoldKey then
+        holdKeyButton.Text = "PRESS KEY / MOUSE..."
+        holdKeyButton.BackgroundColor3 = COLORS.orange
+        setStatus("WAITING: KEY OR MOUSE1-4", COLORS.orange)
+    else
+        hideKeyButton.Text = "PRESS A KEY..."
+        hideKeyButton.BackgroundColor3 = COLORS.orange
+        setStatus("WAITING FOR UI KEY", COLORS.orange)
+    end
+end
+
+-- =========================================================
+-- 10. Player monitoring (respawn / rig replacement safe)
+-- =========================================================
 
 local function monitorPlayer(player)
-	player.CharacterAdded:Connect(function(character)
-		character:WaitForChild("HumanoidRootPart", 5)
-		setupPlayerGlow(character, player)
-	end)
-	if player.Character then
-		setupPlayerGlow(player.Character, player)
-	end
+    if player == localPlayer then
+        return
+    end
+
+    disconnectList(playerConnections[player])
+    playerConnections[player] = {}
+    local list = playerConnections[player]
+
+    table.insert(list, player.CharacterAdded:Connect(function(character)
+        -- Kill the old ESP immediately, then wait for the new rig to become usable.
+        destroyPlayerEsp(player)
+        if lockedTarget and Players:GetPlayerFromCharacter(lockedTarget) == player then
+            lockedTarget = nil
+        end
+        schedulePlayerEsp(player, character, "CharacterAdded")
+
+        local function watchHumanoid(humanoid)
+            if not humanoid or not humanoid:IsA("Humanoid") then
+                return
+            end
+
+            -- Hypershot-like games may keep a dead Character in Workspace while
+            -- waiting for the real respawn. Drop the lock immediately on Died
+            -- instead of letting the camera follow the staged/dead body.
+            table.insert(list, humanoid.Died:Connect(function()
+                if lockedTarget == character then
+                    lockedTarget = nil
+                    if isHoldingKey then
+                        setStatus("TARGET DEAD - SEARCHING", COLORS.orange)
+                    end
+                end
+            end))
+
+            table.insert(list, humanoid.StateChanged:Connect(function(_, newState)
+                if newState == Enum.HumanoidStateType.Dead and lockedTarget == character then
+                    lockedTarget = nil
+                    if isHoldingKey then
+                        setStatus("TARGET DEAD - SEARCHING", COLORS.orange)
+                    end
+                end
+            end))
+        end
+
+        local humanoid = getCharacterHumanoid(character)
+        if humanoid then
+            watchHumanoid(humanoid)
+        end
+
+        -- Some games finish inserting body parts shortly after CharacterAdded.
+        table.insert(list, character.ChildAdded:Connect(function(child)
+            if player.Character ~= character then
+                return
+            end
+
+            if child:IsA("Humanoid") then
+                watchHumanoid(child)
+                schedulePlayerEsp(player, character, "HumanoidAdded")
+            elseif child:IsA("BasePart") then
+                schedulePlayerEsp(player, character, "ChildAdded")
+            end
+        end))
+    end))
+
+    if player.CharacterRemoving then
+        table.insert(list, player.CharacterRemoving:Connect(function(character)
+            if lockedTarget == character then
+                lockedTarget = nil
+            end
+
+            local data = espObjects[player]
+            if data and data.character == character then
+                destroyPlayerEsp(player)
+            end
+        end))
+    end
+
+    -- CharacterAppearanceLoaded is an additional signal for games that build
+    -- their visible rig in stages.
+    if player.CharacterAppearanceLoaded then
+        table.insert(list, player.CharacterAppearanceLoaded:Connect(function(character)
+            if player.Character == character then
+                schedulePlayerEsp(player, character, "CharacterAppearanceLoaded")
+            end
+        end))
+    end
+
+    table.insert(list, player:GetPropertyChangedSignal("Team"):Connect(function()
+        -- Re-evaluate both target eligibility and ESP visibility immediately.
+        refreshPlayerEsp(player)
+    end))
+
+    if player.Character then
+        refreshPlayerEsp(player)
+    end
 end
 
-Players.PlayerAdded:Connect(monitorPlayer)
+addConnection(Players.PlayerAdded:Connect(monitorPlayer))
+
+addConnection(Players.PlayerRemoving:Connect(function(player)
+    if lockedTarget and Players:GetPlayerFromCharacter(lockedTarget) == player then
+        lockedTarget = nil
+        isHoldingKey = false
+    end
+
+    espBuildTokens[player] = nil
+    destroyPlayerEsp(player)
+    disconnectList(playerConnections[player])
+    playerConnections[player] = nil
+end))
+
 for _, player in ipairs(Players:GetPlayers()) do
-	task.spawn(function() monitorPlayer(player) end)
+    if player ~= localPlayer then
+        task.spawn(function()
+            monitorPlayer(player)
+        end)
+    end
 end
 
-espButton.MouseButton1Click:Connect(function()
-	espEnabled = not espEnabled
-	espButton.Text = espEnabled and "ESP: ON" or "ESP: OFF"
-	espButton.BackgroundColor3 = espEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-	
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player.Character then
-			local hl = player.Character:FindFirstChild("PlayerAuraHighlight")
-			if hl then hl.Enabled = espEnabled end
-		end
-	end
-end)
+-- Low-frequency ESP audit. This catches games that rebuild/replace parts of a
+-- character without firing a useful Player.CharacterAdded signal for the final rig.
+addConnection(RunService.Heartbeat:Connect(function()
+    if not espEnabled then
+        return
+    end
 
-systemButton.MouseButton1Click:Connect(function()
-	isSystemActive = not isSystemActive
-	if isSystemActive then
-		systemButton.Text = "Lock System: ON"
-		systemButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-		fovCircle.Visible = isUiVisible
-	else
-		systemButton.Text = "Lock System: OFF"
-		systemButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-		isHoldingKey = false
-		lockedTarget = nil
-		fovCircle.Visible = false
-	end
-end)
+    local now = os.clock()
+    local lastAudit = sharedEnv.__AutoGameMenuEspAuditTime or 0
+    if now - lastAudit < 0.20 then
+        return
+    end
+    sharedEnv.__AutoGameMenuEspAuditTime = now
 
--- ค้นหาเป้าหมายภายในวงกลม FOV
-local function getTargetClosestToScreenCenter()
-	local closestTarget = nil
-	local shortestDistance = math.huge
-	local viewportCenter = camera.ViewportSize / 2
-	
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= localPlayer and player.Character then
-			local root = player.Character:FindFirstChild("HumanoidRootPart")
-			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-			
-			if root and humanoid and humanoid.Health > 0 then
-				local screenPoint, onScreen = camera:WorldToViewportPoint(root.Position)
-				if onScreen then
-					local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
-					local distanceToCenter = (screenPos - viewportCenter).Magnitude
-					
-					if distanceToCenter <= currentRadius and distanceToCenter < shortestDistance then
-						shortestDistance = distanceToCenter
-						closestTarget = player.Character
-					end
-				end
-			end
-		end
-	end
-	return closestTarget
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= localPlayer then
+            auditPlayerEsp(player)
+        end
+    end
+end))
+
+addConnection(RunService.RenderStepped:Connect(function()
+    updateAllVisuals()
+end))
+
+-- =========================================================
+-- 11. UI interaction
+-- =========================================================
+
+addConnection(espButton.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    updateEspUi()
+    refreshAllEsp()
+    setStatus(espEnabled and "ESP ENABLED" or "ESP DISABLED", espEnabled and COLORS.green or COLORS.red)
+end))
+
+addConnection(auraButton.MouseButton1Click:Connect(function()
+    espAuraEnabled = not espAuraEnabled
+    updateVisualUi()
+    refreshAllEsp()
+    setStatus("AURA " .. (espAuraEnabled and "ON" or "OFF"), COLORS.subtext)
+end))
+
+addConnection(boxButton.MouseButton1Click:Connect(function()
+    espBoxEnabled = not espBoxEnabled
+    updateVisualUi()
+    refreshAllEsp()
+    setStatus("BOX " .. (espBoxEnabled and "ON" or "OFF"), COLORS.subtext)
+end))
+
+addConnection(skeletonButton.MouseButton1Click:Connect(function()
+    espSkeletonEnabled = not espSkeletonEnabled
+    updateVisualUi()
+    refreshAllEsp()
+    setStatus("SKELETON " .. (espSkeletonEnabled and "ON" or "OFF"), COLORS.subtext)
+end))
+
+addConnection(nameButton.MouseButton1Click:Connect(function()
+    espNameEnabled = not espNameEnabled
+    updateVisualUi()
+    refreshAllEsp()
+    setStatus("NAME " .. (espNameEnabled and "ON" or "OFF"), COLORS.subtext)
+end))
+
+addConnection(lockButton.MouseButton1Click:Connect(function()
+    lockEnabled = not lockEnabled
+    updateLockUi()
+    setStatus(lockEnabled and "LOCK READY" or "LOCK DISABLED", lockEnabled and COLORS.green or COLORS.red)
+end))
+
+addConnection(teamButton.MouseButton1Click:Connect(function()
+    teamCheckEnabled = not teamCheckEnabled
+    lockedTarget = nil
+    isHoldingKey = false
+    updateTeamUi()
+    refreshAllEsp()
+    setStatus(teamCheckEnabled and "TEAM CHECK ENABLED" or "TEAM CHECK DISABLED", teamCheckEnabled and COLORS.green or COLORS.orange)
+end))
+
+addConnection(targetButton.MouseButton1Click:Connect(function()
+    targetPartMode = (targetPartMode == "Head") and "Body" or "Head"
+    lockedTarget = nil
+    if isHoldingKey then
+        local target = getTargetClosestToScreenCenter()
+        if target then
+            lockedTarget = target
+            setStatus("TARGET: " .. string.upper(targetPartMode), COLORS.green)
+        else
+            isHoldingKey = false
+            setStatus("NO TARGET IN FOV", COLORS.orange)
+        end
+    else
+        setStatus("TARGET: " .. string.upper(targetPartMode), COLORS.subtext)
+    end
+    updateTargetUi()
+end))
+
+addConnection(holdKeyButton.MouseButton1Click:Connect(function()
+    beginKeyBinding("hold")
+end))
+
+addConnection(hideKeyButton.MouseButton1Click:Connect(function()
+    beginKeyBinding("hide")
+end))
+
+addConnection(minimizeButton.MouseButton1Click:Connect(function()
+    setUiMinimized(not uiMinimized)
+end))
+
+-- Drag the compact window from its header.
+local draggingPanel = false
+local dragStart = nil
+local panelStart = nil
+
+addConnection(header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        draggingPanel = true
+        dragStart = input.Position
+        panelStart = panel.Position
+    end
+end))
+
+addConnection(UserInputService.InputChanged:Connect(function(input)
+    if not draggingPanel then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        panel.Position = UDim2.new(
+            panelStart.X.Scale,
+            panelStart.X.Offset + delta.X,
+            panelStart.Y.Scale,
+            panelStart.Y.Offset + delta.Y
+        )
+    end
+end))
+
+addConnection(UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        draggingPanel = false
+    end
+end))
+
+addConnection(fovKnob.MouseButton1Down:Connect(function()
+    isDraggingFov = true
+end))
+
+addConnection(fovSlider.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingFov = true
+        updateFovFromInput(input)
+    end
+end))
+
+addConnection(UserInputService.InputChanged:Connect(function(input)
+    if not isDraggingFov then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        updateFovFromInput(input)
+    end
+end))
+
+addConnection(UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingFov = false
+    end
+end))
+
+addConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    -- Lock binding can be any keyboard key OR Mouse1-4.
+    if waitingForHoldKey then
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            holdBindKind = "Keyboard"
+            holdKey = input.KeyCode
+        elseif isSupportedMouseButton(input.UserInputType) then
+            holdBindKind = "Mouse"
+            holdMouseButton = input.UserInputType
+        else
+            return
+        end
+
+        waitingForHoldKey = false
+        waitingForHideKey = false
+        holdKeyButton.BackgroundColor3 = COLORS.panel2
+        updateKeyUi()
+        setStatus("LOCK KEY SET TO " .. getLockBindLabel(), COLORS.green)
+        return
+    end
+
+    if waitingForHideKey then
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then
+            return
+        end
+
+        hideKey = input.KeyCode
+        waitingForHideKey = false
+        waitingForHoldKey = false
+        hideKeyButton.BackgroundColor3 = COLORS.panel2
+        updateKeyUi()
+        setStatus("UI KEY SET TO " .. hideKey.Name, COLORS.green)
+        return
+    end
+
+    -- Hide/show UI still uses the keyboard-only UI key.
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == hideKey then
+        setUiVisible(not uiVisible)
+        return
+    end
+
+    if gameProcessed then
+        return
+    end
+
+    if lockEnabled and lockInputMatches(input) and not isHoldingKey then
+        isHoldingKey = true
+        lockedTarget = nil
+
+        local target = getTargetClosestToScreenCenter()
+        if target then
+            lockedTarget = target
+            setStatus("TARGET LOCKED", COLORS.green)
+        else
+            isHoldingKey = false
+            setStatus("NO TARGET IN FOV", COLORS.orange)
+        end
+    end
+end))
+
+addConnection(UserInputService.InputEnded:Connect(function(input)
+    if lockInputMatches(input) then
+        isHoldingKey = false
+        lockedTarget = nil
+        if lockEnabled then
+            setStatus("LOCK READY", COLORS.subtext)
+        end
+    end
+end))
+
+-- =========================================================
+-- 12. Camera lock
+-- =========================================================
+
+addConnection(RunService.RenderStepped:Connect(function()
+    if not lockEnabled or not isHoldingKey then
+        return
+    end
+
+    -- If the current target died, never keep looking at its old/death position.
+    -- Reacquire a living target only after the dead character is rejected.
+    if not lockedTarget or not isValidLockedTarget(lockedTarget) then
+        local replacement = getTargetClosestToScreenCenter()
+        if replacement then
+            lockedTarget = replacement
+            setStatus("TARGET IN FOV", COLORS.green)
+        else
+            -- Nothing is currently inside the configured FOV. Do not rotate
+            -- the camera toward a dead/off-screen player.
+            lockedTarget = nil
+            return
+        end
+    end
+
+    local camera = getCamera()
+    if not camera then
+        return
+    end
+
+    local targetHumanoid = getCharacterHumanoid(lockedTarget)
+    if not isHumanoidAlive(targetHumanoid) then
+        lockedTarget = nil
+        return
+    end
+
+    local aimPart = getAimPart(lockedTarget)
+    if not aimPart or not aimPart:IsDescendantOf(workspace) then
+        lockedTarget = nil
+        return
+    end
+
+    local cameraPosition = camera.CFrame.Position
+    local targetPosition = aimPart.Position
+    camera.CFrame = CFrame.lookAt(cameraPosition, targetPosition)
+end))
+
+-- =========================================================
+-- 13. Initial state
+-- =========================================================
+
+local initialAlpha = (currentRadius - minRadius) / (maxRadius - minRadius)
+updateFovUi(initialAlpha)
+updateEspUi()
+updateVisualUi()
+updateLockUi()
+updateTeamUi()
+updateTargetUi()
+updateKeyUi()
+setUiVisible(true)
+setUiMinimized(false)
+setStatus("READY", COLORS.subtext)
+refreshAllEsp()
+
+-- =========================================================
+-- 14. Cleanup
+-- =========================================================
+
+local cleanedUp = false
+
+local function cleanup()
+    if cleanedUp then
+        return
+    end
+
+    cleanedUp = true
+    lockEnabled = false
+    isHoldingKey = false
+    lockedTarget = nil
+    isDraggingFov = false
+    waitingForHoldKey = false
+    waitingForHideKey = false
+
+    disconnectAll()
+
+    if screenGui then
+        pcall(function()
+            screenGui:Destroy()
+        end)
+    end
+
+    if sharedEnv.__AutoGameMenuCleanup == cleanup then
+        sharedEnv.__AutoGameMenuCleanup = nil
+    end
 end
 
-bindButton.MouseButton1Click:Connect(function()
-	waitingForHoldKey = true
-	waitingForHideKey = false
-	bindButton.Text = "กดปุ่มสำหรับกดค้าง..."
-	bindButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
-end)
-
-hideBindButton.MouseButton1Click:Connect(function()
-	waitingForHideKey = true
-	waitingForHoldKey = false
-	hideBindButton.Text = "กดปุ่มซ่อน UI..."
-	hideBindButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
-end)
-
-local function toggleUiVisibility()
-	isUiVisible = not isUiVisible
-	for _, child in ipairs(frame:GetChildren()) do
-		if child:IsA("GuiObject") and child ~= hideBindButton then
-			child.Visible = isUiVisible
-		end
-	end
-	fovCircle.Visible = isUiVisible and isSystemActive
-	
-	if isUiVisible then
-		frame.Size = UDim2.new(0, 200, 0, 230)
-		hideBindButton.Text = "Hide UI Key: [ " .. hideKey.Name .. " ]"
-		hideBindButton.BackgroundColor3 = Color3.fromRGB(80, 50, 120)
-	else
-		frame.Size = UDim2.new(0, 200, 0, 40)
-		hideBindButton.Text = "Show UI [ " .. hideKey.Name .. " ]"
-		hideBindButton.BackgroundColor3 = Color3.fromRGB(50, 120, 50)
-	end
-end
-
--- ระบบเลื่อน Slider ปรับขนาดวงกลม FOV
-local function updateRadiusFromInput(input)
-	local sliderAbsolutePos = fovSliderBg.AbsolutePosition.X
-	local sliderAbsoluteSize = fovSliderBg.AbsoluteSize.X
-	local mouseX = input.Position.X
-	
-	local relativeX = math.clamp((mouseX - sliderAbsolutePos) / sliderAbsoluteSize, 0, 1)
-	currentRadius = math.floor(minRadius + (maxRadius - minRadius) * relativeX)
-	
-	fovSliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
-	fovButton.Position = UDim2.new(relativeX, -8, 0, -4)
-	fovLabel.Text = "FOV Radius: " .. currentRadius
-	fovCircle.Radius = currentRadius
-end
-
-fovButton.MouseButton1Down:Connect(function()
-	isDraggingFov = true
-end)
-
-fovSliderBg.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDraggingFov = true
-		updateRadiusFromInput(input)
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDraggingFov = false
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if isDraggingFov and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		updateRadiusFromInput(input)
-	end
-end)
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if input.UserInputType == Enum.UserInputType.Keyboard then
-		if waitingForHoldKey then
-			holdKey = input.KeyCode
-			waitingForHoldKey = false
-			bindButton.Text = "Hold Key: [ " .. holdKey.Name .. " ]"
-			bindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-			return
-		elseif waitingForHideKey then
-			hideKey = input.KeyCode
-			waitingForHideKey = false
-			hideBindButton.Text = isUiVisible and ("Hide UI Key: [ " .. hideKey.Name .. " ]") or ("Show UI [ " .. hideKey.Name .. " ]")
-			hideBindButton.BackgroundColor3 = isUiVisible and Color3.fromRGB(80, 50, 120) or Color3.fromRGB(50, 120, 50)
-			return
-		end
-		
-		if input.KeyCode == hideKey then
-			toggleUiVisibility()
-			return
-		end
-	end
-
-	if gameProcessed then return end
-	
-	if isSystemActive and input.KeyCode == holdKey then
-		isHoldingKey = true
-		lockedTarget = getTargetClosestToScreenCenter()
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == holdKey then
-		isHoldingKey = false
-		lockedTarget = nil
-	end
-end)
-
--- 4. ระบบล็อกเป้าหมายด้วยการหมุนมุมกล้อง พร้อมเช็คความพร้อมของผู้เล่นใหม่ตลอดเวลา
-RunService.RenderStepped:Connect(function()
-	fovCircle.Position = camera.ViewportSize / 2
-
-	if isSystemActive and isHoldingKey and lockedTarget then
-		local targetHumanoid = lockedTarget:FindFirstChildOfClass("Humanoid")
-		local targetRoot = lockedTarget:FindFirstChild("HumanoidRootPart")
-		
-		if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
-			local targetPos = targetRoot.Position + Vector3.new(0, 0.5, 0)
-			local currentCameraPos = camera.CFrame.Position
-			camera.CFrame = CFrame.new(currentCameraPos, targetPos)
-		else
-			lockedTarget = nil
-			isHoldingKey = false
-		end
-	end
-end)
+sharedEnv.__AutoGameMenuCleanup = cleanup
+addConnection(screenGui.Destroying:Connect(function()
+    pcall(cleanup)
+end))
